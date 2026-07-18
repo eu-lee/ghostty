@@ -77,6 +77,7 @@ class AppDelegate: NSObject,
     @IBOutlet private var menuCommandPalette: NSMenuItem?
     // worktree-sidebar: Temporary until feat/wt-keybinds adds the generated menu outlet/action.
     private var menuWorktreeSidebar: NSMenuItem?
+    private var menuWorktreePicker: NSMenuItem?
 
     @IBOutlet private var menuEqualizeSplits: NSMenuItem?
     @IBOutlet private var menuMoveSplitDividerUp: NSMenuItem?
@@ -1099,6 +1100,7 @@ extension AppDelegate {
         // worktree-sidebar: TODO(feat/wt-keybinds): connect this to the generated
         // toggle_worktree_sidebar action once the keybind branch is merged.
         guard menuWorktreeSidebar == nil,
+              menuWorktreePicker == nil,
               let menu = menuCommandPalette?.menu,
               let commandPaletteItem = menuCommandPalette else { return }
 
@@ -1113,6 +1115,16 @@ extension AppDelegate {
         let insertionIndex = menu.index(of: commandPaletteItem) + 1
         menu.insertItem(item, at: insertionIndex)
         menuWorktreeSidebar = item
+
+        let pickerItem = NSMenuItem(
+            title: "Go to Worktree…",
+            action: #selector(TerminalController.showWorktreePicker(_:)),
+            keyEquivalent: ""
+        )
+        pickerItem.target = nil
+        pickerItem.setImageIfDesired(systemSymbolName: "arrow.triangle.branch")
+        menu.insertItem(pickerItem, at: insertionIndex + 1)
+        menuWorktreePicker = pickerItem
     }
 
     /// Setup all the images for our menu items.
@@ -1218,8 +1230,8 @@ extension AppDelegate {
         syncMenuShortcut(config, action: "toggle_window_float_on_top", menuItem: self.menuFloatOnTop)
         syncMenuShortcut(config, action: "inspector:toggle", menuItem: self.menuTerminalInspector)
         syncMenuShortcut(config, action: "toggle_command_palette", menuItem: self.menuCommandPalette)
-        // worktree-sidebar: Harmless until feat/wt-keybinds teaches config parsing this action.
         syncMenuShortcut(config, action: "toggle_worktree_sidebar", menuItem: self.menuWorktreeSidebar)
+        syncMenuShortcut(config, action: "worktree_picker", menuItem: self.menuWorktreePicker)
 
         syncMenuShortcut(config, action: "toggle_secure_input", menuItem: self.menuSecureInput)
 

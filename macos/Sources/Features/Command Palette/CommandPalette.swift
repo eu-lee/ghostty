@@ -17,8 +17,14 @@ struct CommandOption: Identifiable, Hashable {
     let leadingColor: Color?
     /// Badge text displayed as a pill.
     let badge: String?
+    /// Optional section header displayed before this option.
+    let sectionTitle: String?
     /// Whether to visually emphasize this option.
     let emphasis: Bool
+    /// Whether to dim this option relative to normal rows.
+    let isDimmed: Bool
+    /// Optional title weight override.
+    let titleWeight: Font.Weight?
     /// Sort key for stable ordering when titles are equal.
     let sortKey: AnySortKey?
     /// The action to perform when this option is selected.
@@ -32,7 +38,10 @@ struct CommandOption: Identifiable, Hashable {
         leadingIcon: String? = nil,
         leadingColor: Color? = nil,
         badge: String? = nil,
+        sectionTitle: String? = nil,
         emphasis: Bool = false,
+        isDimmed: Bool = false,
+        titleWeight: Font.Weight? = nil,
         sortKey: AnySortKey? = nil,
         action: @escaping () -> Void
     ) {
@@ -43,7 +52,10 @@ struct CommandOption: Identifiable, Hashable {
         self.leadingIcon = leadingIcon
         self.leadingColor = leadingColor
         self.badge = badge
+        self.sectionTitle = sectionTitle
         self.emphasis = emphasis
+        self.isDimmed = isDimmed
+        self.titleWeight = titleWeight
         self.sortKey = sortKey
         self.action = action
     }
@@ -60,6 +72,8 @@ struct CommandOption: Identifiable, Hashable {
 struct CommandPaletteView: View {
     @Binding var isPresented: Bool
     var backgroundColor: Color = Color(nsColor: .windowBackgroundColor)
+    var placeholder: String = "Execute a command…"
+    var selectsFirstOption: Bool = false
     var options: [CommandOption]
     @State private var rawQuery = ""
     @State private var selectedIndex: UInt?
@@ -108,7 +122,7 @@ struct CommandPaletteView: View {
         }
 
         VStack(alignment: .leading, spacing: 0) {
-            CommandPaletteQuery(query: $rawQuery) { event in
+            CommandPaletteQuery(query: $rawQuery, placeholder: placeholder) { event in
                 switch event {
                 case .exit:
                     isPresented = false
@@ -146,7 +160,7 @@ struct CommandPaletteView: View {
                     }
                 } else {
                     if let selectedIndex, selectedIndex == 0 {
-                        self.selectedIndex = nil
+                        self.selectedIndex = selectsFirstOption ? 0 : nil
                     }
                 }
             }
@@ -187,6 +201,13 @@ struct CommandPaletteView: View {
                 // there will be a delay before the next use.
                 // To keep behavior the same as before, we reset it.
                 rawQuery = ""
+            } else if selectsFirstOption {
+                selectedIndex = 0
+            }
+        }
+        .onAppear {
+            if selectsFirstOption {
+                selectedIndex = 0
             }
         }
     }
@@ -221,11 +242,17 @@ struct CommandPaletteView: View {
 /// The text field for building the query for the command palette.
 private struct CommandPaletteQuery: View {
     @Binding var query: String
+    var placeholder: String = "Execute a command…"
     var onEvent: ((KeyboardEvent) -> Void)?
     @FocusState private var isTextFieldFocused: Bool
 
-    init(query: Binding<String>, onEvent: ((KeyboardEvent) -> Void)? = nil) {
+    init(
+        query: Binding<String>,
+        placeholder: String = "Execute a command…",
+        onEvent: ((KeyboardEvent) -> Void)? = nil
+    ) {
         _query = query
+        self.placeholder = placeholder
         self.onEvent = onEvent
     }
 
@@ -255,7 +282,7 @@ private struct CommandPaletteQuery: View {
             .frame(width: 0, height: 0)
             .accessibilityHidden(true)
 
-            TextField("Execute a command…", text: $query)
+            TextField(placeholder, text: $query)
                 .padding()
                 .font(.system(size: 20, weight: .light))
                 .frame(height: 48)
@@ -282,6 +309,7 @@ private struct CommandPaletteQuery: View {
                 }
         }
     }
+
 }
 
 private struct CommandTable: View {
@@ -301,21 +329,27 @@ private struct CommandTable: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(options.enumerated()), id: \.1.id) { index, option in
-                            CommandRow(
-                                option: option,
-                                query: query,
-                                isSelected: {
-                                    if let selected = selectedIndex {
-                                        return selected == index ||
-                                            (selected >= options.count &&
-                                                index == options.count - 1)
-                                    } else {
-                                        return false
-                                    }
-                                }(),
-                                hoveredID: $hoveredOptionID
-                            ) {
-                                action(option)
+                            VStack(alignment: .leading, spacing: 4) {
+                                if shouldShowSectionHeader(at: index) {
+                                    CommandSectionHeader(title: option.sectionTitle)
+                                }
+
+                                CommandRow(
+                                    option: option,
+                                    query: query,
+                                    isSelected: {
+                                        if let selected = selectedIndex {
+                                            return selected == index ||
+                                                (selected >= options.count &&
+                                                    index == options.count - 1)
+                                        } else {
+                                            return false
+                                        }
+                                    }(),
+                                    hoveredID: $hoveredOptionID
+                                ) {
+                                    action(option)
+                                }
                             }
                         }
                     }
@@ -331,6 +365,27 @@ private struct CommandTable: View {
             }
         }
     }
+
+    private func shouldShowSectionHeader(at index: Int) -> Bool {
+        guard options[index].sectionTitle != nil else { return false }
+        guard index > 0 else { return true }
+        return options[index - 1].sectionTitle != options[index].sectionTitle
+    }
+}
+
+private struct CommandSectionHeader: View {
+    let title: String?
+
+    var body: some View {
+        if let title {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .padding(.horizontal, 8)
+                .padding(.top, 6)
+        }
+    }
 }
 
 /// A single row in the command palette.
@@ -342,15 +397,15 @@ private struct CommandRow: View {
     var action: () -> Void
 
     private var highlightedTitle: Text {
+        let weight = option.titleWeight ?? (option.emphasis ? Font.Weight.medium : .regular)
         guard !query.isEmpty,
               let indices = option.title.matchedIndices(for: query) else {
             return Text(option.title)
-                .fontWeight(option.emphasis ? .medium : .regular)
+                .fontWeight(weight)
         }
 
         var attributed = AttributedString(option.title)
-        attributed[attributed.startIndex...].font = .body
-            .weight(option.emphasis ? .medium : .regular)
+        attributed[attributed.startIndex...].font = .body.weight(weight)
 
         for idx in indices {
             let offset = option.title.distance(from: option.title.startIndex, to: idx)
@@ -407,6 +462,7 @@ private struct CommandRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .foregroundStyle(option.isDimmed ? .secondary : .primary)
 
                 Spacer()
 

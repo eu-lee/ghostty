@@ -713,6 +713,7 @@ fn actionCommands(action: Action.Key) []const Command {
         // palette context.
         .toggle_command_palette,
         .toggle_worktree_sidebar,
+        .worktree_picker,
         .toggle_quick_terminal,
         .toggle_visibility,
         .previous_tab,

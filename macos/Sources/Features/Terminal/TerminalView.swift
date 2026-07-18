@@ -33,6 +33,12 @@ protocol TerminalViewModel: ObservableObject {
     /// The command palette state.
     var commandPaletteIsShowing: Bool { get set }
 
+    /// The worktree picker state.
+    var worktreePickerIsShowing: Bool { get set }
+
+    /// The model backing the worktree picker when this window supports it.
+    var worktreePickerViewModel: WorktreeSidebarViewModel? { get }
+
     /// The update overlay should be visible.
     var updateOverlayIsVisible: Bool { get }
 }
@@ -114,6 +120,16 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                         ghosttyConfig: ghostty.config,
                         updateViewModel: (NSApp.delegate as? AppDelegate)?.updateViewModel) { action in
                         self.delegate?.performAction(action, on: surfaceView)
+                    }
+
+                    if let worktreeViewModel = viewModel.worktreePickerViewModel {
+                        TerminalWorktreePickerView(
+                            surfaceView: surfaceView,
+                            isPresented: $viewModel.worktreePickerIsShowing,
+                            ghosttyConfig: ghostty.config,
+                            viewModel: worktreeViewModel) { worktree in
+                            worktreeViewModel.select(worktree)
+                        }
                     }
                 }
 

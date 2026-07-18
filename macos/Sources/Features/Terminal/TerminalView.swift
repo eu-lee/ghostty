@@ -36,6 +36,9 @@ protocol TerminalViewModel: ObservableObject {
     /// The worktree picker state.
     var worktreePickerIsShowing: Bool { get set }
 
+    /// The new-worktree popup state.
+    var newWorktreeIsShowing: Bool { get set }
+
     /// The model backing the worktree picker when this window supports it.
     var worktreePickerViewModel: WorktreeSidebarViewModel? { get }
 
@@ -130,6 +133,12 @@ struct TerminalView<ViewModel: TerminalViewModel>: View {
                             viewModel: worktreeViewModel) { worktree in
                             worktreeViewModel.select(worktree)
                         }
+
+                        TerminalNewWorktreeView(
+                            surfaceView: surfaceView,
+                            isPresented: $viewModel.newWorktreeIsShowing,
+                            ghosttyConfig: ghostty.config,
+                            viewModel: worktreeViewModel)
                     }
                 }
 

@@ -51,6 +51,9 @@ class BaseTerminalController: NSWindowController,
     /// This can be set to show/hide the worktree picker.
     @Published var worktreePickerIsShowing: Bool = false
 
+    /// This can be set to show/hide the new-worktree popup.
+    @Published var newWorktreeIsShowing: Bool = false
+
     /// Subclasses that support worktrees override this with their sidebar model.
     var worktreePickerViewModel: WorktreeSidebarViewModel? { nil }
 
@@ -1439,6 +1442,7 @@ class BaseTerminalController: NSWindowController,
         commandPaletteIsShowing.toggle()
         if commandPaletteIsShowing {
             worktreePickerIsShowing = false
+            newWorktreeIsShowing = false
         }
         if commandPaletteIsShowing {
             // Fix the incorrect focus when toggling from InlineTitleEditor

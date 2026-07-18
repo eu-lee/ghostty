@@ -808,6 +808,9 @@ pub const Action = union(enum) {
     /// Remove the current worktree.
     remove_worktree,
 
+    /// Create a new worktree.
+    new_worktree,
+
     /// Toggle the quick terminal.
     ///
     /// The quick terminal, also known as the "Quake-style" or drop-down
@@ -1421,6 +1424,7 @@ pub const Action = union(enum) {
             .worktree_picker,
             .close_worktree_session,
             .remove_worktree,
+            .new_worktree,
             .toggle_background_opacity,
             .show_on_screen_keyboard,
             .reset_window_size,
@@ -3382,6 +3386,15 @@ test "parse: action worktree actions" {
         try parseSingle("a=remove_worktree"),
     );
     try testing.expectError(Error.InvalidFormat, parseSingle("a=remove_worktree:next"));
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .new_worktree = {} },
+        },
+        try parseSingle("a=new_worktree"),
+    );
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=new_worktree:next"));
 }
 
 test "parse: action with string" {

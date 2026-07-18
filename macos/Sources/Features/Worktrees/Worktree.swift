@@ -108,6 +108,44 @@ struct GitWorktreeModel {
         }
     }
 
+    /// Remove a linked worktree from disk via `git worktree remove`.
+    /// Branch deletion is deliberately out of scope: git removes only the
+    /// worktree checkout, leaving its branch reusable.
+    func removeWorktree(
+        path: URL,
+        force: Bool = false,
+        forCwd cwd: URL
+    ) async -> Result<Void, WorktreeCreateError> {
+        guard let root = await repoRoot(forCwd: cwd) else {
+            return .failure(.notARepository)
+        }
+
+        var arguments = ["worktree", "remove", path.path]
+        if force {
+            arguments.append("--force")
+        }
+
+        let result = await runner.runGit(
+            arguments: arguments,
+            cwd: root,
+            timeout: createTimeout
+        )
+
+        switch result {
+        case .success:
+            return .success(())
+        case .failure(_, let stderr):
+            logFailure(result, command: "worktree remove", cwd: root)
+            return .failure(.git(stderr))
+        case .timedOut:
+            logFailure(result, command: "worktree remove", cwd: root)
+            return .failure(.timedOut)
+        case .launchFailed(let message):
+            logFailure(result, command: "worktree remove", cwd: root)
+            return .failure(.launchFailed(message))
+        }
+    }
+
     func repoRoot(forCwd cwd: URL) async -> URL? {
         let result = await runner.runGit(
             arguments: ["rev-parse", "--git-common-dir"],

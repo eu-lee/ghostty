@@ -194,6 +194,7 @@ private struct WorktreeSidebarList: View {
                 emptyState
             } else {
                 list
+                removeErrorSection
                 newWorktreeSection
             }
         }
@@ -317,21 +318,109 @@ private struct WorktreeSidebarList: View {
         List(viewModel.filteredWorktrees, id: \.path) { worktree in
             WorktreeSidebarRowView(
                 worktree: worktree,
-                isActive: worktree.path == viewModel.selectedWorktree?.path
+                isActive: viewModel.isActive(worktree)
             )
             // Whole row is clickable; the click switches workspaces (M3).
             .contentShape(Rectangle())
             .onTapGesture {
                 viewModel.select(worktree)
             }
+            .contextMenu {
+                if viewModel.isActive(worktree) {
+                    Button("Close Session") {
+                        viewModel.deactivate(worktree)
+                    }
+                }
+
+                if WorktreeSidebar.canRemove(worktree) {
+                    Button("Remove Worktree…", role: .destructive) {
+                        confirmRemove(worktree)
+                    }
+                }
+            }
             .listRowBackground(
-                worktree.path == viewModel.selectedWorktree?.path
+                viewModel.isActive(worktree)
                     ? Color.accentColor.opacity(0.18)
                     : Color.clear
             )
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+    }
+
+    private var removeErrorSection: some View {
+        Group {
+            if let error = viewModel.removeError {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(3)
+                        .help(error)
+
+                    if let candidate = viewModel.forceRemoveCandidate {
+                        Button {
+                            confirmForceRemove(candidate)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "trash")
+                                Text("Force remove")
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.red)
+                        .disabled(viewModel.isRemovingWorktree)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private func confirmRemove(_ worktree: Worktree) {
+        guard confirmDestructive(
+            messageText: "Remove Worktree?",
+            informativeText: "This deletes the worktree checkout from disk. The branch is left intact.",
+            confirmButtonTitle: "Remove Worktree"
+        ) else {
+            return
+        }
+
+        viewModel.delete(worktree)
+    }
+
+    private func confirmForceRemove(_ worktree: Worktree) {
+        guard confirmDestructive(
+            messageText: "Force Remove Worktree?",
+            informativeText: "This deletes the worktree checkout even if it contains modified or untracked files. The branch is left intact.",
+            confirmButtonTitle: "Force Remove"
+        ) else {
+            return
+        }
+
+        Task {
+            await viewModel.removeWorktree(worktree, force: true)
+        }
+    }
+
+    private func confirmDestructive(
+        messageText: String,
+        informativeText: String,
+        confirmButtonTitle: String
+    ) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = messageText
+        alert.informativeText = informativeText
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: confirmButtonTitle)
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons.first?.hasDestructiveAction = true
+
+        let response = alert.runModal()
+        return [.alertFirstButtonReturn, .OK].contains(response)
     }
 }
 
@@ -370,6 +459,12 @@ extension TerminalController {
         controller.viewModel.onSelect = { [weak self] worktree in
             self?.switchToWorktree(worktree)
         }
+        controller.viewModel.onDeactivate = { [weak self] worktree in
+            self?.deactivateWorktree(worktree)
+        }
+        controller.viewModel.onDelete = { [weak self] worktree in
+            self?.deleteWorktree(worktree)
+        }
     }
 
     /// The cwd to source worktrees from: the window's first surface's live pwd,
@@ -393,7 +488,12 @@ extension TerminalController {
     /// open (see `toggleWorktreeSidebar` / `windowDidBecomeKey`).
     // worktree-sidebar:
     func refreshWorktreeSidebar() {
-        worktreeSidebarViewController?.refresh(cwd: worktreeSidebarCwd)
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+        let cwd = worktreeSidebarCwd
+        Task { @MainActor in
+            await viewModel.refresh(cwd: cwd)
+            self.refreshActiveWorktreePaths()
+        }
     }
 
     /// Semantic entry point for toggling the sidebar. This no-arg signature is kept

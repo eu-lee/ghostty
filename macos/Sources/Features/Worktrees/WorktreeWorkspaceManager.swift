@@ -35,6 +35,10 @@ final class WorktreeWorkspaceManager: NSObject {
     /// Detached workspaces keyed by standardized worktree path.
     private(set) var detached: [URL: Workspace] = [:]
 
+    /// Called when the attached/detached workspace set changes outside the
+    /// controller's direct switch path, such as a detached surface exiting.
+    var onWorkspaceStateChange: (() -> Void)?
+
     /// The worktree path bound to the currently attached surface tree. Nil
     /// until the window's original tree is adopted on the first switch.
     var activePath: URL?
@@ -68,13 +72,33 @@ final class WorktreeWorkspaceManager: NSObject {
     /// Store a workspace that is being detached from the view hierarchy.
     func detach(_ workspace: Workspace) {
         detached[Self.key(workspace.worktreePath)] = workspace
+        onWorkspaceStateChange?()
     }
 
     /// Remove and return the workspace for the given worktree so its tree can
     /// be attached. Nil when the worktree has no workspace yet (first visit —
     /// the caller creates one lazily).
     func removeForAttach(_ path: URL) -> Workspace? {
-        detached.removeValue(forKey: Self.key(path))
+        let removed = detached.removeValue(forKey: Self.key(path))
+        if removed != nil {
+            onWorkspaceStateChange?()
+        }
+        return removed
+    }
+
+    /// Return the detached workspace for `path` without removing it.
+    func workspace(for path: URL) -> Workspace? {
+        detached[Self.key(path)]
+    }
+
+    /// Drop a detached workspace, releasing its surfaces and ptys.
+    @discardableResult
+    func removeDetached(for path: URL) -> Workspace? {
+        let removed = detached.removeValue(forKey: Self.key(path))
+        if removed != nil {
+            onWorkspaceStateChange?()
+        }
+        return removed
     }
 
     /// A deterministic detached workspace, used as a fallback target when the
@@ -97,6 +121,7 @@ final class WorktreeWorkspaceManager: NSObject {
     func removeAll() {
         detached.removeAll()
         activePath = nil
+        onWorkspaceStateChange?()
     }
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
@@ -113,6 +138,7 @@ final class WorktreeWorkspaceManager: NSObject {
             // (rows mirror git worktrees, not workspaces); revisiting the
             // worktree lazily creates a fresh workspace.
             detached.removeValue(forKey: entry.key)
+            onWorkspaceStateChange?()
         } else {
             detached[entry.key]?.tree = newTree
         }

@@ -66,9 +66,16 @@ and layout all survive; switching back restores them exactly).
   repository, one subdirectory per branch (slashes in branch names become
   dashes). The new worktree opens immediately; git errors show inline in the
   sidebar, never as alerts.
+- **Close Session** from a row's context menu drops that worktree's live
+  workspace and returns the row to inactive. The worktree remains on disk, and
+  opening it again starts a fresh session.
+- **Remove Worktree…** from a row's context menu runs `git worktree remove` for
+  that checkout. The branch is left intact. If git refuses because the worktree
+  is dirty, the sidebar shows the error inline and offers **Force remove**.
 - The sidebar's collapsed state and width are remembered for the app session
   (new windows inherit them); persisting across restarts is a non-goal for
-  v1, as are dirty/ahead-behind indicators and worktree deletion. The
+  v1, as are dirty/ahead-behind indicators. Creation and removal never delete
+  branches. The
   feature is macOS-only; the keybind actions are no-ops elsewhere.
 
 ## Download

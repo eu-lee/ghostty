@@ -37,16 +37,33 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// progress indicator and prevents concurrent creations.
     @Published private(set) var isCreatingWorktree: Bool = false
 
+    /// True while `git worktree remove` is running. Prevents duplicate
+    /// removal attempts from repeated menu/button actions.
+    @Published private(set) var isRemovingWorktree: Bool = false
+
+    /// Canonical paths for worktrees that currently have a live workspace in
+    /// this window: the attached tree and any detached workspaces.
+    @Published private(set) var activeWorktreePaths: Set<URL> = []
+
     /// The last worktree-creation failure, as a short user-facing message
     /// rendered inline in the sidebar (never an alert). Nil when the last
     /// creation succeeded or the user dismissed the message.
     @Published private(set) var createError: String?
+
+    /// The last worktree-removal failure, rendered inline near the list.
+    @Published private(set) var removeError: String?
+
+    /// Worktree whose last removal failed with a dirty/untracked-tree style
+    /// git error, making a force retry appropriate.
+    @Published private(set) var forceRemoveCandidate: Worktree?
 
     /// Invoked when the user picks a worktree row. The M3 switching layer
     /// (TerminalController) wires this to the workspace switch; selection
     /// state is then updated by the switcher, so the highlight tracks the
     /// active workspace rather than the click.
     var onSelect: ((Worktree) -> Void)?
+    var onDeactivate: ((Worktree) -> Void)?
+    var onDelete: ((Worktree) -> Void)?
 
     private let model: GitWorktreeModel
     private(set) var currentCwd: URL?
@@ -110,6 +127,14 @@ final class WorktreeSidebarViewModel: ObservableObject {
         onSelect?(worktree)
     }
 
+    func deactivate(_ worktree: Worktree) {
+        onDeactivate?(worktree)
+    }
+
+    func delete(_ worktree: Worktree) {
+        onDelete?(worktree)
+    }
+
     /// Create a worktree (and branch) named `branch` via `git worktree add`,
     /// then refresh the list and open the new worktree (M4). Failures land in
     /// `createError` for the sidebar to render inline.
@@ -156,6 +181,44 @@ final class WorktreeSidebarViewModel: ObservableObject {
     func clearCreateError() {
         createError = nil
     }
+
+    func updateActiveWorktreePaths(_ paths: Set<URL>) {
+        activeWorktreePaths = Set(paths.map { WorktreeWorkspaceManager.key($0) })
+    }
+
+    func isActive(_ worktree: Worktree) -> Bool {
+        WorktreeSidebar.isActive(worktree, in: activeWorktreePaths)
+    }
+
+    /// Remove a linked worktree from disk, then refresh the list. Workspace
+    /// teardown is owned by the controller before this is called.
+    func removeWorktree(_ worktree: Worktree, force: Bool = false) async {
+        guard WorktreeSidebar.canRemove(worktree), !isRemovingWorktree else { return }
+        guard let cwd = currentCwd else {
+            removeError = "No working directory"
+            forceRemoveCandidate = nil
+            return
+        }
+
+        isRemovingWorktree = true
+        removeError = nil
+        forceRemoveCandidate = nil
+        defer { isRemovingWorktree = false }
+
+        switch await model.removeWorktree(path: worktree.path, force: force, forCwd: cwd) {
+        case .success:
+            await refresh(cwd: cwd)
+        case .failure(let error):
+            let message = error.message
+            removeError = message
+            forceRemoveCandidate = WorktreeSidebar.canForceRemove(afterGitMessage: message) ? worktree : nil
+        }
+    }
+
+    func clearRemoveError() {
+        removeError = nil
+        forceRemoveCandidate = nil
+    }
 }
 
 /// Pure, side-effect-free helpers for the sidebar. Kept free of `@MainActor`
@@ -169,6 +232,23 @@ enum WorktreeSidebar {
             return branch
         }
         return worktree.path.lastPathComponent
+    }
+
+    static func canRemove(_ worktree: Worktree) -> Bool {
+        !worktree.isMain
+    }
+
+    static func isActive(_ worktree: Worktree, in active: Set<URL>) -> Bool {
+        active.contains(URL(fileURLWithPath: canonicalPath(worktree.path)))
+    }
+
+    static func canForceRemove(afterGitMessage message: String) -> Bool {
+        let lowercased = message.lowercased()
+        guard lowercased.contains("force") else { return false }
+
+        return lowercased.contains("modified") ||
+            lowercased.contains("untracked") ||
+            lowercased.contains("dirty")
     }
 
     /// Canonicalize a file URL's path for comparison: resolves symlinks and

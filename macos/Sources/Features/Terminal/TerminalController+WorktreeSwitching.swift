@@ -10,6 +10,9 @@ extension TerminalController {
     private func ensureWorktreeWorkspaces() -> WorktreeWorkspaceManager {
         if let worktreeWorkspaces { return worktreeWorkspaces }
         let manager = WorktreeWorkspaceManager()
+        manager.onWorkspaceStateChange = { [weak self] in
+            self?.refreshActiveWorktreePaths()
+        }
         worktreeWorkspaces = manager
         return manager
     }
@@ -46,6 +49,7 @@ extension TerminalController {
             // binding is adopted and the highlight agrees.
             manager.activePath = targetKey
             viewModel.selectedWorktree = worktree
+            refreshActiveWorktreePaths()
             return
         }
 
@@ -55,6 +59,7 @@ extension TerminalController {
             // nowhere to detach it to. Refuse to switch rather than silently
             // dropping live surfaces.
             Ghostty.logger.warning("worktree-sidebar: current tree has no worktree binding; switch aborted")
+            refreshActiveWorktreePaths()
             return
         }
 
@@ -85,6 +90,7 @@ extension TerminalController {
 
         manager.activePath = targetKey
         viewModel.selectedWorktree = worktree
+        refreshActiveWorktreePaths()
 
         if let focusTarget {
             focusedSurface = focusTarget
@@ -126,6 +132,7 @@ extension TerminalController {
             viewModel.selectedWorktree = viewModel.worktrees
                 .first { WorktreeWorkspaceManager.key($0.path) == key }
         }
+        refreshActiveWorktreePaths()
 
         if let focusTarget = workspace.lastFocusedSurface ?? workspace.tree.root?.leftmostLeaf() {
             focusedSurface = focusTarget
@@ -133,5 +140,124 @@ extension TerminalController {
                 Ghostty.moveFocus(to: focusTarget)
             }
         }
+    }
+
+    /// Publish the set of live worktree workspaces for sidebar actions.
+    func refreshActiveWorktreePaths() {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        var active: Set<URL> = []
+        if let manager = worktreeWorkspaces {
+            if let activePath = manager.activePath {
+                active.insert(WorktreeWorkspaceManager.key(activePath))
+            } else if let selected = viewModel.selectedWorktree {
+                active.insert(WorktreeWorkspaceManager.key(selected.path))
+            }
+
+            active.formUnion(manager.detached.keys)
+        } else if let selected = viewModel.selectedWorktree {
+            active.insert(WorktreeWorkspaceManager.key(selected.path))
+        }
+
+        viewModel.updateActiveWorktreePaths(active)
+    }
+
+    func deactivateWorktree(_ worktree: Worktree) {
+        Task { @MainActor in
+            _ = await deactivateWorktreeSession(worktree)
+        }
+    }
+
+    func deleteWorktree(_ worktree: Worktree) {
+        Task { @MainActor in
+            await deleteWorktreeAfterConfirmation(worktree)
+        }
+    }
+
+    @discardableResult
+    private func deactivateWorktreeSession(_ worktree: Worktree) async -> Bool {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return false }
+        let manager = ensureWorktreeWorkspaces()
+        let key = WorktreeWorkspaceManager.key(worktree.path)
+        let activeKey = manager.activePath
+            ?? viewModel.selectedWorktree.map { WorktreeWorkspaceManager.key($0.path) }
+
+        if let workspace = manager.workspace(for: key) {
+            guard await confirmWorkspaceTeardownIfNeeded(workspace.tree) else { return false }
+            manager.removeDetached(for: key)
+            refreshActiveWorktreePaths()
+            return true
+        }
+
+        guard activeKey == key else {
+            refreshActiveWorktreePaths()
+            return false
+        }
+
+        guard let fallback = deactivationFallback(for: worktree, activeKey: key, viewModel: viewModel) else {
+            refreshActiveWorktreePaths()
+            return false
+        }
+
+        guard await confirmWorkspaceTeardownIfNeeded(surfaceTree) else { return false }
+
+        switchToWorktree(fallback)
+        guard manager.workspace(for: key) != nil else {
+            refreshActiveWorktreePaths()
+            return false
+        }
+
+        manager.removeDetached(for: key)
+        refreshActiveWorktreePaths()
+        return true
+    }
+
+    private func deleteWorktreeAfterConfirmation(_ worktree: Worktree) async {
+        guard WorktreeSidebar.canRemove(worktree) else { return }
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        refreshActiveWorktreePaths()
+        if viewModel.isActive(worktree) {
+            let deactivated = await deactivateWorktreeSession(worktree)
+            refreshActiveWorktreePaths()
+            if !deactivated, viewModel.isActive(worktree) {
+                return
+            }
+
+            await viewModel.refresh(cwd: worktreeSidebarCwd)
+            refreshActiveWorktreePaths()
+        }
+
+        await viewModel.removeWorktree(worktree)
+        refreshActiveWorktreePaths()
+    }
+
+    private func deactivationFallback(
+        for worktree: Worktree,
+        activeKey: URL,
+        viewModel: WorktreeSidebarViewModel
+    ) -> Worktree? {
+        if !worktree.isMain {
+            return viewModel.worktrees.first(where: \.isMain)
+        }
+
+        return viewModel.worktrees.first { candidate in
+            WorktreeWorkspaceManager.key(candidate.path) != activeKey &&
+                viewModel.isActive(candidate)
+        }
+    }
+
+    private func confirmWorkspaceTeardownIfNeeded(_ tree: SplitTree<Ghostty.SurfaceView>) async -> Bool {
+        guard tree.contains(where: { $0.needsConfirmQuit }) else { return true }
+
+        guard let response = await confirmCloseAsync(
+            messageText: "Close Session?",
+            informativeText: "This worktree session still has a running process. If you close the session the process will be killed.",
+            confirmButtonTitle: "Close Session"
+        ) else {
+            return false
+        }
+
+        return [.alertFirstButtonReturn, .OK].contains(response)
     }
 }

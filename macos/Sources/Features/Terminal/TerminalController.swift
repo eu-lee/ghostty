@@ -1632,6 +1632,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             let cwd = worktreeSidebarCwd
             Task { @MainActor in
                 await viewModel.refresh(cwd: cwd)
+                self.refreshActiveWorktreePaths()
                 self.cycleWorktree(direction, viewModel: viewModel)
             }
         }

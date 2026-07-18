@@ -178,7 +178,13 @@ private struct WorktreeSidebarList: View {
 
     @State private var isNamingNewWorktree = false
     @State private var newBranchName = ""
-    @FocusState private var newWorktreeFieldFocused: Bool
+    @State private var newBaseRef = ""
+    @FocusState private var newWorktreeFieldFocused: NewWorktreeField?
+
+    private enum NewWorktreeField: Hashable {
+        case branch
+        case base
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -218,32 +224,47 @@ private struct WorktreeSidebarList: View {
     }
 
     /// "New worktree…" affordance pinned under the list (M4). Clicking it
-    /// swaps in an inline branch-name field: Return creates the worktree
-    /// (`git worktree add`), Escape cancels. Failures render as a small
-    /// inline message here — never an alert (M4 guide).
+    /// swaps in inline branch-name and base-ref fields: Return creates the
+    /// worktree (`git worktree add`), Escape cancels. Failures render as a
+    /// small inline message here — never an alert (M4 guide).
     private var newWorktreeSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
 
             if isNamingNewWorktree {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus.circle")
-                        .foregroundStyle(.secondary)
-                    TextField("Branch name", text: $newBranchName)
-                        .textFieldStyle(.plain)
-                        .disabled(viewModel.isCreatingWorktree)
-                        .focused($newWorktreeFieldFocused)
-                        .onAppear { newWorktreeFieldFocused = true }
-                        .onSubmit(submitNewWorktree)
-                        .onExitCommand(perform: cancelNewWorktree)
-                    if viewModel.isCreatingWorktree {
-                        ProgressView()
-                            .controlSize(.small)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle")
+                            .foregroundStyle(.secondary)
+                        TextField("Branch name", text: $newBranchName)
+                            .textFieldStyle(.plain)
+                            .disabled(viewModel.isCreatingWorktree)
+                            .focused($newWorktreeFieldFocused, equals: .branch)
+                            .onAppear { newWorktreeFieldFocused = .branch }
+                            .onSubmit(submitNewWorktree)
+                            .onExitCommand(perform: cancelNewWorktree)
+                        if viewModel.isCreatingWorktree {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("from")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, alignment: .trailing)
+                        TextField(viewModel.defaultBaseBranch ?? "main HEAD", text: $newBaseRef)
+                            .textFieldStyle(.plain)
+                            .disabled(viewModel.isCreatingWorktree)
+                            .focused($newWorktreeFieldFocused, equals: .base)
+                            .onSubmit(submitNewWorktree)
+                            .onExitCommand(perform: cancelNewWorktree)
                     }
                 }
             } else {
                 Button {
                     newBranchName = ""
+                    newBaseRef = ""
                     isNamingNewWorktree = true
                 } label: {
                     HStack(spacing: 6) {
@@ -271,14 +292,16 @@ private struct WorktreeSidebarList: View {
 
     private func submitNewWorktree() {
         let branch = newBranchName
+        let base = newBaseRef
         Task {
-            await viewModel.createWorktree(branch: branch)
+            await viewModel.createWorktree(branch: branch, base: base)
 
             // Keep the field (and its text) around on failure so the name can
-            // be corrected next to the error message.
+            // or base can be corrected next to the error message.
             if viewModel.createError == nil {
                 isNamingNewWorktree = false
                 newBranchName = ""
+                newBaseRef = ""
             }
         }
     }
@@ -286,6 +309,7 @@ private struct WorktreeSidebarList: View {
     private func cancelNewWorktree() {
         isNamingNewWorktree = false
         newBranchName = ""
+        newBaseRef = ""
         viewModel.clearCreateError()
     }
 

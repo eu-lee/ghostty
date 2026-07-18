@@ -68,16 +68,27 @@ struct GitWorktreeModel {
 
     /// Create a worktree for a new branch named `branch`, at the conventional
     /// path `../<repo>-worktrees/<branch>` next to the main repository root
-    /// (see `WorktreeSidebar.newWorktreePath`). Branch-name validation is
-    /// git's job: a bad name surfaces as `.git` with git's own message.
-    func createWorktree(branch: String, forCwd cwd: URL) async -> Result<URL, WorktreeCreateError> {
+    /// (see `WorktreeSidebar.newWorktreePath`). If `base` is non-nil it is
+    /// passed as git's explicit start point; otherwise git uses the repo
+    /// root's HEAD. Branch/base validation is git's job: a bad value surfaces
+    /// as `.git` with git's own message.
+    func createWorktree(
+        branch: String,
+        from base: String? = nil,
+        forCwd cwd: URL
+    ) async -> Result<URL, WorktreeCreateError> {
         guard let root = await repoRoot(forCwd: cwd) else {
             return .failure(.notARepository)
         }
 
         let destination = WorktreeSidebar.newWorktreePath(repoRoot: root, branch: branch)
+        var arguments = ["worktree", "add", destination.path, "-b", branch]
+        if let base {
+            arguments.append(base)
+        }
+
         let result = await runner.runGit(
-            arguments: ["worktree", "add", destination.path, "-b", branch],
+            arguments: arguments,
             cwd: root,
             timeout: createTimeout
         )

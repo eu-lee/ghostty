@@ -67,6 +67,13 @@ final class WorktreeSidebarViewModel: ObservableObject {
         WorktreeSidebar.filter(worktrees, query: filterText)
     }
 
+    /// Default base ref for creating a new worktree. v1 uses the currently
+    /// active workspace branch; changing that policy later should only touch
+    /// this property.
+    var defaultBaseBranch: String? {
+        selectedWorktree?.branch
+    }
+
     /// Load worktrees for the repository containing `cwd`. A nil cwd (e.g. a
     /// window whose first surface reports no pwd and has no configured
     /// working-directory) resolves to the empty state.
@@ -106,7 +113,7 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// Create a worktree (and branch) named `branch` via `git worktree add`,
     /// then refresh the list and open the new worktree (M4). Failures land in
     /// `createError` for the sidebar to render inline.
-    func createWorktree(branch: String) async {
+    func createWorktree(branch: String, base: String? = nil) async {
         let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isCreatingWorktree else { return }
         guard let cwd = currentCwd else {
@@ -114,11 +121,19 @@ final class WorktreeSidebarViewModel: ObservableObject {
             return
         }
 
+        let trimmedBase = base?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedBase: String?
+        if let trimmedBase, !trimmedBase.isEmpty {
+            resolvedBase = trimmedBase
+        } else {
+            resolvedBase = defaultBaseBranch
+        }
+
         isCreatingWorktree = true
         createError = nil
         defer { isCreatingWorktree = false }
 
-        switch await model.createWorktree(branch: trimmed, forCwd: cwd) {
+        switch await model.createWorktree(branch: trimmed, from: resolvedBase, forCwd: cwd) {
         case .success(let path):
             await refresh(cwd: cwd)
 

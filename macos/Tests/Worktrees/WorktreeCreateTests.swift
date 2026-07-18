@@ -15,6 +15,15 @@ struct WorktreeCreateTests {
     HEAD 1111111111111111111111111111111111111111
     branch refs/heads/main
     """
+    private static let porcelainWithFeature = """
+    worktree /repo/main
+    HEAD 1111111111111111111111111111111111111111
+    branch refs/heads/main
+
+    worktree /repo/feature
+    HEAD 2222222222222222222222222222222222222222
+    branch refs/heads/feature
+    """
 
     // MARK: Pure helpers
 
@@ -60,6 +69,25 @@ struct WorktreeCreateTests {
         }
         #expect(url.path == "/repo/main-worktrees/myfix")
         #expect(runner.addArguments == ["worktree", "add", "/repo/main-worktrees/myfix", "-b", "myfix"])
+    }
+
+    @Test func createPassesExplicitBaseAsTrailingArgument() async {
+        let runner = FakeCreateRunner(commonDir: Self.commonDir, porcelain: Self.porcelain)
+        let model = GitWorktreeModel(runner: runner)
+
+        let result = await model.createWorktree(
+            branch: "myfix",
+            from: "feature",
+            forCwd: URL(fileURLWithPath: "/repo/main"))
+
+        guard case .success(let url) = result else {
+            Issue.record("expected success, got \(result)")
+            return
+        }
+        #expect(url.path == "/repo/main-worktrees/myfix")
+        #expect(runner.addArguments == [
+            "worktree", "add", "/repo/main-worktrees/myfix", "-b", "myfix", "feature",
+        ])
     }
 
     @Test func createOutsideRepositoryFails() async {
@@ -111,6 +139,44 @@ struct WorktreeCreateTests {
         #expect(viewModel.isCreatingWorktree == false)
         #expect(viewModel.worktrees.map(\.branch) == ["main", "myfix"])
         #expect(opened?.branch == "myfix")
+        #expect(runner.addArguments == [
+            "worktree", "add", "/repo/main-worktrees/myfix", "-b", "myfix", "main",
+        ])
+    }
+
+    @Test func blankBaseFallsBackToSelectedWorktreeBranch() async {
+        let runner = FakeCreateRunner(
+            commonDir: Self.commonDir,
+            porcelain: Self.porcelainWithFeature,
+            addedBlock: """
+            worktree /repo/main-worktrees/stacked
+            HEAD 3333333333333333333333333333333333333333
+            branch refs/heads/stacked
+            """)
+        let viewModel = WorktreeSidebarViewModel(model: GitWorktreeModel(runner: runner))
+
+        await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/feature"))
+        #expect(viewModel.defaultBaseBranch == "feature")
+
+        await viewModel.createWorktree(branch: "stacked", base: "   ")
+
+        #expect(viewModel.createError == nil)
+        #expect(runner.addArguments == [
+            "worktree", "add", "/repo/main-worktrees/stacked", "-b", "stacked", "feature",
+        ])
+    }
+
+    @Test func noSelectionAndNoBaseOmitsStartPoint() async {
+        let runner = FakeCreateRunner(commonDir: Self.commonDir, porcelain: Self.porcelain)
+        let viewModel = WorktreeSidebarViewModel(model: GitWorktreeModel(runner: runner))
+
+        await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/main"))
+        viewModel.selectedWorktree = nil
+
+        await viewModel.createWorktree(branch: "myfix", base: nil)
+
+        #expect(viewModel.createError == nil)
+        #expect(runner.addArguments == ["worktree", "add", "/repo/main-worktrees/myfix", "-b", "myfix"])
     }
 
     @Test func createFailureShowsInlineErrorAndKeepsList() async {
@@ -132,6 +198,23 @@ struct WorktreeCreateTests {
 
         viewModel.clearCreateError()
         #expect(viewModel.createError == nil)
+    }
+
+    @Test func badBaseShowsInlineGitError() async {
+        let runner = FakeCreateRunner(
+            commonDir: Self.commonDir,
+            porcelain: Self.porcelain,
+            addResult: .failure(status: 128, stderr: "fatal: invalid reference: missing-base"))
+        let viewModel = WorktreeSidebarViewModel(model: GitWorktreeModel(runner: runner))
+
+        await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/main"))
+
+        await viewModel.createWorktree(branch: "myfix", base: "missing-base")
+
+        #expect(viewModel.createError == "invalid reference: missing-base")
+        #expect(runner.addArguments == [
+            "worktree", "add", "/repo/main-worktrees/myfix", "-b", "myfix", "missing-base",
+        ])
     }
 
     @Test func blankBranchNameIsIgnored() async {

@@ -59,10 +59,13 @@ and layout all survive; switching back restores them exactly).
   ```
 
 - **Create a worktree** with the "New worktree…" row: enter a branch name and
-  it runs `git worktree add ../<repo>-worktrees/<branch> -b <branch>` — a
-  visible container directory next to the repository, one subdirectory per
-  branch (slashes in branch names become dashes). The new worktree opens
-  immediately; git errors show inline in the sidebar, never as alerts.
+  optional base ref. The base field defaults to the currently selected
+  worktree's branch; blank uses that visible default. Ghostty runs
+  `git worktree add ../<repo>-worktrees/<branch> -b <branch> <base>` when a
+  base is resolved, using a visible container directory next to the
+  repository, one subdirectory per branch (slashes in branch names become
+  dashes). The new worktree opens immediately; git errors show inline in the
+  sidebar, never as alerts.
 - The sidebar's collapsed state and width are remembered for the app session
   (new windows inherit them); persisting across restarts is a non-goal for
   v1, as are dirty/ahead-behind indicators and worktree deletion. The

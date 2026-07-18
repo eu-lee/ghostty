@@ -5382,6 +5382,18 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .close_worktree_session => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .close_worktree_session,
+            {},
+        ),
+
+        .remove_worktree => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .remove_worktree,
+            {},
+        ),
+
         .new_worktree => return try self.rt_app.performAction(
             .{ .surface = self },
             .new_worktree,

@@ -802,6 +802,12 @@ pub const Action = union(enum) {
     /// Show the worktree picker.
     worktree_picker,
 
+    /// Close the current worktree session.
+    close_worktree_session,
+
+    /// Remove the current worktree.
+    remove_worktree,
+
     /// Create a new worktree.
     new_worktree,
 
@@ -1416,6 +1422,8 @@ pub const Action = union(enum) {
             .toggle_command_palette,
             .toggle_worktree_sidebar,
             .worktree_picker,
+            .close_worktree_session,
+            .remove_worktree,
             .new_worktree,
             .toggle_background_opacity,
             .show_on_screen_keyboard,
@@ -3358,8 +3366,26 @@ test "parse: action worktree_picker" {
     try testing.expectError(Error.InvalidFormat, parseSingle("a=worktree_picker:next"));
 }
 
-test "parse: action new_worktree" {
+test "parse: action worktree actions" {
     const testing = std.testing;
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .close_worktree_session = {} },
+        },
+        try parseSingle("a=close_worktree_session"),
+    );
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=close_worktree_session:next"));
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .remove_worktree = {} },
+        },
+        try parseSingle("a=remove_worktree"),
+    );
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=remove_worktree:next"));
 
     try testing.expectEqual(
         Binding{

@@ -120,6 +120,12 @@ pub const Action = union(Key) {
     /// Show the worktree picker.
     worktree_picker,
 
+    /// Close the current worktree session.
+    close_worktree_session,
+
+    /// Remove the current worktree.
+    remove_worktree,
+
     /// Create a new worktree.
     new_worktree,
 
@@ -374,6 +380,8 @@ pub const Action = union(Key) {
         toggle_quick_terminal,
         toggle_worktree_sidebar,
         worktree_picker,
+        close_worktree_session,
+        remove_worktree,
         new_worktree,
         toggle_command_palette,
         toggle_visibility,

@@ -7035,6 +7035,16 @@ pub const Keybinds = struct {
             );
             try self.set.put(
                 alloc,
+                .{ .key = .{ .unicode = 'c' }, .mods = .{ .super = true, .alt = true } },
+                .{ .close_worktree_session = {} },
+            );
+            try self.set.put(
+                alloc,
+                .{ .key = .{ .physical = .backspace }, .mods = .{ .super = true, .alt = true } },
+                .{ .remove_worktree = {} },
+            );
+            try self.set.put(
+                alloc,
                 .{ .key = .{ .unicode = 'n' }, .mods = .{ .super = true, .alt = true } },
                 .{ .new_worktree = {} },
             );

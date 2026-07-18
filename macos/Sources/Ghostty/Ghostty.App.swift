@@ -542,6 +542,12 @@ extension Ghostty {
             case GHOSTTY_ACTION_WORKTREE_PICKER:
                 return showWorktreePicker(app, target: target)
 
+            case GHOSTTY_ACTION_CLOSE_WORKTREE_SESSION:
+                return closeCurrentWorktreeSession(app, target: target)
+
+            case GHOSTTY_ACTION_REMOVE_WORKTREE:
+                return removeCurrentWorktree(app, target: target)
+
             case GHOSTTY_ACTION_NEW_WORKTREE:
                 return showNewWorktree(app, target: target)
 
@@ -1280,6 +1286,52 @@ extension Ghostty {
                 guard let controller = surfaceView.window?.windowController as? TerminalController else { return false }
 
                 controller.showWorktreePicker()
+                return true
+
+            default:
+                assertionFailure()
+                return false
+            }
+        }
+
+        private static func closeCurrentWorktreeSession(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s
+        ) -> Bool {
+            switch target.tag {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("close worktree session does nothing with an app target")
+                return false
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return false }
+                guard let surfaceView = self.surfaceView(from: surface) else { return false }
+                guard let controller = surfaceView.window?.windowController as? TerminalController else { return false }
+
+                controller.closeCurrentWorktreeSession()
+                return true
+
+            default:
+                assertionFailure()
+                return false
+            }
+        }
+
+        private static func removeCurrentWorktree(
+            _ app: ghostty_app_t,
+            target: ghostty_target_s
+        ) -> Bool {
+            switch target.tag {
+            case GHOSTTY_TARGET_APP:
+                Ghostty.logger.warning("remove worktree does nothing with an app target")
+                return false
+
+            case GHOSTTY_TARGET_SURFACE:
+                guard let surface = target.target.surface else { return false }
+                guard let surfaceView = self.surfaceView(from: surface) else { return false }
+                guard let controller = surfaceView.window?.windowController as? TerminalController else { return false }
+
+                controller.removeCurrentWorktree()
                 return true
 
             default:

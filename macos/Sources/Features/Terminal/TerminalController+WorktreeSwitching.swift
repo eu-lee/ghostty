@@ -188,10 +188,22 @@ extension TerminalController {
         }
     }
 
+    func closeCurrentWorktreeSession() {
+        guard let controller = worktreeSidebarViewController, !controller.isSidebarCollapsed else { return }
+        guard let worktree = controller.viewModel.selectedWorktree else { return }
+        deactivateWorktree(worktree)
+    }
+
     func deleteWorktree(_ worktree: Worktree) {
         Task { @MainActor in
             await deleteWorktreeAfterConfirmation(worktree)
         }
+    }
+
+    func removeCurrentWorktree() {
+        guard let controller = worktreeSidebarViewController, !controller.isSidebarCollapsed else { return }
+        guard let worktree = controller.viewModel.selectedWorktree else { return }
+        deleteWorktree(worktree)
     }
 
     @discardableResult

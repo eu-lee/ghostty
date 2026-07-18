@@ -33,6 +33,15 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// initial (pre-load) state from a genuinely empty / non-repo result.
     @Published private(set) var hasLoaded: Bool = false
 
+    /// True while a `git worktree add` is running (M4). Drives the inline
+    /// progress indicator and prevents concurrent creations.
+    @Published private(set) var isCreatingWorktree: Bool = false
+
+    /// The last worktree-creation failure, as a short user-facing message
+    /// rendered inline in the sidebar (never an alert). Nil when the last
+    /// creation succeeded or the user dismissed the message.
+    @Published private(set) var createError: String?
+
     /// Invoked when the user picks a worktree row. The M3 switching layer
     /// (TerminalController) wires this to the workspace switch; selection
     /// state is then updated by the switcher, so the highlight tracks the
@@ -92,6 +101,45 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// Forward a row click to the switching layer (see `onSelect`).
     func select(_ worktree: Worktree) {
         onSelect?(worktree)
+    }
+
+    /// Create a worktree (and branch) named `branch` via `git worktree add`,
+    /// then refresh the list and open the new worktree (M4). Failures land in
+    /// `createError` for the sidebar to render inline.
+    func createWorktree(branch: String) async {
+        let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isCreatingWorktree else { return }
+        guard let cwd = currentCwd else {
+            createError = "No working directory"
+            return
+        }
+
+        isCreatingWorktree = true
+        createError = nil
+        defer { isCreatingWorktree = false }
+
+        switch await model.createWorktree(branch: trimmed, forCwd: cwd) {
+        case .success(let path):
+            await refresh(cwd: cwd)
+
+            // Open the new worktree. Match by canonical path: git may list
+            // the created worktree under a different (canonical) spelling
+            // than the destination path we asked for.
+            let created = WorktreeSidebar.canonicalPath(path)
+            if let worktree = worktrees.first(where: {
+                WorktreeSidebar.canonicalPath($0.path) == created
+            }) {
+                select(worktree)
+            }
+        case .failure(let error):
+            createError = error.message
+        }
+    }
+
+    /// Clear a pending creation error (the user dismissed the new-worktree
+    /// field or started typing a fresh attempt).
+    func clearCreateError() {
+        createError = nil
     }
 }
 
@@ -170,6 +218,26 @@ enum WorktreeSidebar {
         let target = ((index + offset) % count + count) % count
         guard target != index else { return nil }
         return worktrees[target]
+    }
+
+    /// The conventional location for a new worktree: a visible container
+    /// directory sibling to the main repository root, holding one directory
+    /// per branch — e.g. repo `~/Code/ghostty` + branch `myfix` →
+    /// `~/Code/ghostty-worktrees/myfix`. Chosen over dot-hidden or in-repo
+    /// locations so worktrees stay reachable from Finder and file pickers
+    /// while staying out of in-repo greps and watchers.
+    static func newWorktreePath(repoRoot: URL, branch: String) -> URL {
+        let root = repoRoot.standardizedFileURL
+        return root
+            .deletingLastPathComponent()
+            .appendingPathComponent(root.lastPathComponent + "-worktrees")
+            .appendingPathComponent(directoryName(forBranch: branch))
+    }
+
+    /// A branch name flattened to a single path component: `review/design`
+    /// becomes the directory name `review-design`.
+    static func directoryName(forBranch branch: String) -> String {
+        branch.replacingOccurrences(of: "/", with: "-")
     }
 
     /// Resolve the cwd to source worktrees from: prefer the surface's live pwd,

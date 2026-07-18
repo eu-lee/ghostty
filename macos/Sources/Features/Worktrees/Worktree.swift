@@ -18,9 +18,84 @@ func worktrees(forCwd cwd: URL) async -> [Worktree] {
     await GitWorktreeModel().worktrees(forCwd: cwd)
 }
 
+/// Why `git worktree add` failed, carrying what the sidebar needs to render
+/// an unobtrusive error message (never an alert — see M4 guide).
+enum WorktreeCreateError: Error, Equatable {
+    /// The source cwd is not inside a git repository.
+    case notARepository
+
+    /// git exited nonzero; the associated value is its trimmed stderr.
+    case git(String)
+
+    case timedOut
+    case launchFailed(String)
+
+    /// A short, user-facing message for the sidebar. git's stderr usually
+    /// leads with "fatal: " or "error: " — strip that noise but keep the
+    /// substance (e.g. "invalid reference: my bad name").
+    var message: String {
+        switch self {
+        case .notARepository:
+            return "Not a git repository"
+        case .git(let stderr):
+            let cleaned = stderr
+                .lines
+                .map { line in
+                    var line = line
+                    for prefix in ["fatal: ", "error: "] where line.hasPrefix(prefix) {
+                        line = String(line.dropFirst(prefix.count))
+                    }
+                    return line
+                }
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleaned.isEmpty ? "git worktree add failed" : cleaned
+        case .timedOut:
+            return "git worktree add timed out"
+        case .launchFailed(let message):
+            return "Could not launch git: \(message)"
+        }
+    }
+}
+
 struct GitWorktreeModel {
     var runner: GitCommandRunning = GitProcessRunner()
     var timeout: TimeInterval = 2
+
+    /// `git worktree add` checks out a full working copy, which on a large
+    /// repository takes far longer than the read-only queries above.
+    var createTimeout: TimeInterval = 30
+
+    /// Create a worktree for a new branch named `branch`, at the conventional
+    /// path `../<repo>-worktrees/<branch>` next to the main repository root
+    /// (see `WorktreeSidebar.newWorktreePath`). Branch-name validation is
+    /// git's job: a bad name surfaces as `.git` with git's own message.
+    func createWorktree(branch: String, forCwd cwd: URL) async -> Result<URL, WorktreeCreateError> {
+        guard let root = await repoRoot(forCwd: cwd) else {
+            return .failure(.notARepository)
+        }
+
+        let destination = WorktreeSidebar.newWorktreePath(repoRoot: root, branch: branch)
+        let result = await runner.runGit(
+            arguments: ["worktree", "add", destination.path, "-b", branch],
+            cwd: root,
+            timeout: createTimeout
+        )
+
+        switch result {
+        case .success:
+            return .success(destination)
+        case .failure(_, let stderr):
+            logFailure(result, command: "worktree add", cwd: root)
+            return .failure(.git(stderr))
+        case .timedOut:
+            logFailure(result, command: "worktree add", cwd: root)
+            return .failure(.timedOut)
+        case .launchFailed(let message):
+            logFailure(result, command: "worktree add", cwd: root)
+            return .failure(.launchFailed(message))
+        }
+    }
 
     func repoRoot(forCwd cwd: URL) async -> URL? {
         let result = await runner.runGit(

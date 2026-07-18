@@ -2,9 +2,17 @@ import AppKit
 import SwiftUI
 
 final class WorktreeSidebarViewController: NSSplitViewController {
+    /// Sidebar state remembered for the app session (M4). Persistence across
+    /// restarts is a v1 non-goal, so this is deliberately in-memory: new
+    /// windows inherit the collapsed state and width the sidebar last had in
+    /// any window, and each window tracks its own from there.
+    private static var sessionIsCollapsed = true
+    private static var sessionWidth: CGFloat?
+
     private let terminalViewContainer: TerminalViewContainer
     let viewModel: WorktreeSidebarViewModel
     private var sidebarSplitViewItem: NSSplitViewItem?
+    private var didApplySessionWidth = false
 
     init(
         contentView terminalViewContainer: TerminalViewContainer,
@@ -40,7 +48,7 @@ final class WorktreeSidebarViewController: NSSplitViewController {
         let sidebarViewController = WorktreeSidebarListViewController(viewModel: viewModel)
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
         sidebarItem.canCollapse = true
-        sidebarItem.isCollapsed = true
+        sidebarItem.isCollapsed = Self.sessionIsCollapsed
         sidebarItem.minimumThickness = 180
         sidebarItem.maximumThickness = 280
 
@@ -54,6 +62,41 @@ final class WorktreeSidebarViewController: NSSplitViewController {
 
         sidebarSplitViewItem = sidebarItem
         (splitView as? WorktreeSidebarSplitView)?.sidebarItem = sidebarItem
+
+        // Track divider drags so new windows inherit the width. Notification
+        // observation rather than the delegate method: NSSplitViewController
+        // is its split view's delegate, and overriding delegate methods it
+        // doesn't itself declare is brittle across SDKs.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(splitViewDidResize(_:)),
+            name: NSSplitView.didResizeSubviewsNotification,
+            object: splitView)
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+
+        // Apply the session width once the view is in a window (divider
+        // positions set before layout don't stick).
+        if !didApplySessionWidth {
+            didApplySessionWidth = true
+            if let width = Self.sessionWidth,
+               !(sidebarSplitViewItem?.isCollapsed ?? true) {
+                splitView.setPosition(width, ofDividerAt: 0)
+            }
+        }
+    }
+
+    @objc private func splitViewDidResize(_ notification: Notification) {
+        guard didApplySessionWidth else { return }
+        guard let sidebarSplitViewItem, !sidebarSplitViewItem.isCollapsed else { return }
+
+        // Ignore transient widths from the collapse animation; only widths a
+        // visible sidebar can actually have are worth remembering.
+        let width = sidebarSplitViewItem.viewController.view.frame.width
+        guard width >= sidebarSplitViewItem.minimumThickness else { return }
+        Self.sessionWidth = width
     }
 
     var isSidebarCollapsed: Bool {
@@ -75,6 +118,7 @@ final class WorktreeSidebarViewController: NSSplitViewController {
             context.allowsImplicitAnimation = true
             sidebarSplitViewItem.animator().isCollapsed = !sidebarSplitViewItem.isCollapsed
         } completionHandler: {
+            Self.sessionIsCollapsed = sidebarSplitViewItem.isCollapsed
             self.view.invalidateIntrinsicContentSize()
         }
     }
@@ -132,6 +176,10 @@ private final class WorktreeSidebarListViewController: NSViewController {
 private struct WorktreeSidebarList: View {
     @ObservedObject var viewModel: WorktreeSidebarViewModel
 
+    @State private var isNamingNewWorktree = false
+    @State private var newBranchName = ""
+    @FocusState private var newWorktreeFieldFocused: Bool
+
     var body: some View {
         VStack(spacing: 0) {
             filterField
@@ -140,6 +188,7 @@ private struct WorktreeSidebarList: View {
                 emptyState
             } else {
                 list
+                newWorktreeSection
             }
         }
     }
@@ -166,6 +215,78 @@ private struct WorktreeSidebarList: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// "New worktree…" affordance pinned under the list (M4). Clicking it
+    /// swaps in an inline branch-name field: Return creates the worktree
+    /// (`git worktree add`), Escape cancels. Failures render as a small
+    /// inline message here — never an alert (M4 guide).
+    private var newWorktreeSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider()
+
+            if isNamingNewWorktree {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus.circle")
+                        .foregroundStyle(.secondary)
+                    TextField("Branch name", text: $newBranchName)
+                        .textFieldStyle(.plain)
+                        .disabled(viewModel.isCreatingWorktree)
+                        .focused($newWorktreeFieldFocused)
+                        .onAppear { newWorktreeFieldFocused = true }
+                        .onSubmit(submitNewWorktree)
+                        .onExitCommand(perform: cancelNewWorktree)
+                    if viewModel.isCreatingWorktree {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+            } else {
+                Button {
+                    newBranchName = ""
+                    isNamingNewWorktree = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle")
+                        Text("New worktree…")
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+
+            if let error = viewModel.createError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+                    .help(error)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func submitNewWorktree() {
+        let branch = newBranchName
+        Task {
+            await viewModel.createWorktree(branch: branch)
+
+            // Keep the field (and its text) around on failure so the name can
+            // be corrected next to the error message.
+            if viewModel.createError == nil {
+                isNamingNewWorktree = false
+                newBranchName = ""
+            }
+        }
+    }
+
+    private func cancelNewWorktree() {
+        isNamingNewWorktree = false
+        newBranchName = ""
+        viewModel.clearCreateError()
     }
 
     private var list: some View {

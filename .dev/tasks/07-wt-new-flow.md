@@ -1,7 +1,7 @@
 # 07 — feat/wt-new-flow  (Milestone M4)
 
-**Base:** rebase onto `feat/wt-switching` once M3 lands. · **Status:** BLOCKED until
-06 exists. · **Terminal branch** (last in the chain).
+**Base:** `main` (M3 merged). · **Status:** IN PROGRESS on `feat/wt-new-flow-m4`.
+· **Terminal branch** (last in the chain).
 **Read first:** [`plan.md`](../../plan.md) §"Milestones → M4"
 
 ## Purpose
@@ -11,9 +11,11 @@ M4: worktree creation + polish. Closes out v1.
 ## Scope
 
 - **"New worktree…" row** at the bottom of the sidebar: prompts for a branch name, runs
-  `git worktree add ../<repo>-<branch> -b <branch>`.
-  - ⚠️ **Confirm the path convention with the human before wiring**, and make it
-    configurable if trivial.
+  `git worktree add ../<repo>-worktrees/<branch> -b <branch>`.
+  - ✅ Path convention confirmed with the human (2026-07-17): a *visible* container
+    directory sibling to the repo (`../<repo>-worktrees/`), one subdirectory per
+    branch, slashes in branch names flattened to dashes. Dot-hidden and in-repo
+    locations were considered and rejected. Not configurable in v1.
   - On success the new worktree appears and opens.
 - **Error surfaces:** git failures shown as an unobtrusive **sidebar message, not
   alerts**. (E.g. bad branch name.) Never crash or block main.

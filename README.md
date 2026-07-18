@@ -38,6 +38,36 @@ for smaller examples of using `libghostty` in C and Zig.
 
 For more details, see [About Ghostty](https://ghostty.org/docs/about).
 
+## Worktree Sidebar (fork feature)
+
+This fork adds a macOS-native **git worktree sidebar**: each window can list
+the worktrees of the repository its terminal is in and switch the entire
+window between per-worktree workspaces. A workspace is the window's whole
+split layout — switching swaps every pane at once, and the previous
+workspace's terminals keep running in the background (processes, scrollback,
+and layout all survive; switching back restores them exactly).
+
+- **Toggle the sidebar** with `cmd+shift+e` (the default binding for the
+  `toggle_worktree_sidebar` keybind action) or View → Worktree Sidebar.
+- **Switch** by clicking a row, or bind the `goto_worktree:next` /
+  `goto_worktree:previous` keybind actions to cycle in sidebar order
+  (no default binding), e.g. in your config:
+
+  ```ini
+  keybind = cmd+alt+right_bracket=goto_worktree:next
+  keybind = cmd+alt+left_bracket=goto_worktree:previous
+  ```
+
+- **Create a worktree** with the "New worktree…" row: enter a branch name and
+  it runs `git worktree add ../<repo>-worktrees/<branch> -b <branch>` — a
+  visible container directory next to the repository, one subdirectory per
+  branch (slashes in branch names become dashes). The new worktree opens
+  immediately; git errors show inline in the sidebar, never as alerts.
+- The sidebar's collapsed state and width are remembered for the app session
+  (new windows inherit them); persisting across restarts is a non-goal for
+  v1, as are dirty/ahead-behind indicators and worktree deletion. The
+  feature is macOS-only; the keybind actions are no-ops elsewhere.
+
 ## Download
 
 See the [download page](https://ghostty.org/download) on the Ghostty website.

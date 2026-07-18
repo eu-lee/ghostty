@@ -49,9 +49,17 @@ and layout all survive; switching back restores them exactly).
 
 - **Toggle the sidebar** with `cmd+shift+e` (the default binding for the
   `toggle_worktree_sidebar` keybind action) or View → Worktree Sidebar.
+- **Jump directly** with View → Go to Worktree… or bind the
+  `worktree_picker` keybind action. The picker searches all worktrees and
+  opens an inactive worktree only when you choose it, e.g. in your config:
+
+  ```ini
+  keybind = cmd+alt+p=worktree_picker
+  ```
+
 - **Switch** by clicking a row, or bind the `goto_worktree:next` /
-  `goto_worktree:previous` keybind actions to cycle in sidebar order
-  (no default binding), e.g. in your config:
+  `goto_worktree:previous` keybind actions to cycle active worktrees only
+  (ones with live sessions, no default binding), e.g. in your config:
 
   ```ini
   keybind = cmd+alt+right_bracket=goto_worktree:next

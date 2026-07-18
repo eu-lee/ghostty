@@ -293,7 +293,8 @@ private struct WorktreeSidebarList: View {
         List(viewModel.filteredWorktrees, id: \.path) { worktree in
             WorktreeSidebarRowView(
                 worktree: worktree,
-                isActive: worktree.path == viewModel.selectedWorktree?.path
+                isActive: viewModel.isLive(worktree),
+                isSelected: worktree.path == viewModel.selectedWorktree?.path
             )
             // Whole row is clickable; the click switches workspaces (M3).
             .contentShape(Rectangle())
@@ -314,6 +315,7 @@ private struct WorktreeSidebarList: View {
 private struct WorktreeSidebarRowView: View {
     let worktree: Worktree
     let isActive: Bool
+    let isSelected: Bool
 
     private var title: String {
         WorktreeSidebar.displayName(for: worktree)
@@ -321,8 +323,11 @@ private struct WorktreeSidebarRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            Circle()
+                .fill(isActive ? Color.accentColor : Color.secondary.opacity(0.25))
+                .frame(width: 6, height: 6)
             Image(systemName: worktree.isDetached ? "arrow.triangle.pull" : "arrow.triangle.branch")
-                .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             Text(title)
                 // Truncate long branch names in the middle, with a tooltip
                 // showing the full name.
@@ -369,7 +374,12 @@ extension TerminalController {
     /// open (see `toggleWorktreeSidebar` / `windowDidBecomeKey`).
     // worktree-sidebar:
     func refreshWorktreeSidebar() {
-        worktreeSidebarViewController?.refresh(cwd: worktreeSidebarCwd)
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+        let cwd = worktreeSidebarCwd
+        Task { @MainActor in
+            await viewModel.refresh(cwd: cwd)
+            self.syncActiveWorktreePaths()
+        }
     }
 
     /// Semantic entry point for toggling the sidebar. This no-arg signature is kept
@@ -392,5 +402,30 @@ extension TerminalController {
 
     @IBAction func toggleWorktreeSidebar(_ sender: Any?) {
         toggleWorktreeSidebar()
+    }
+
+    func showWorktreePicker() {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        let present = {
+            self.syncActiveWorktreePaths()
+            self.commandPaletteIsShowing = false
+            self.worktreePickerIsShowing = true
+            _ = self.focusedSurface?.resignFirstResponder()
+        }
+
+        if viewModel.hasLoaded {
+            present()
+        } else {
+            let cwd = worktreeSidebarCwd
+            Task { @MainActor in
+                await viewModel.refresh(cwd: cwd)
+                present()
+            }
+        }
+    }
+
+    @IBAction func showWorktreePicker(_ sender: Any?) {
+        showWorktreePicker()
     }
 }

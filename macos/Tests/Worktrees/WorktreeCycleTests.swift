@@ -12,10 +12,12 @@ struct WorktreeCycleTests {
         .init(path: URL(fileURLWithPath: "/repo/feature"), branch: "feature", isMain: false, isDetached: false),
         .init(path: URL(fileURLWithPath: "/repo/review"), branch: "review", isMain: false, isDetached: false),
     ]
+    private static let allActive = Set(worktrees.map { WorktreeWorkspaceManager.key($0.path) })
 
     @Test func nextFollowsSidebarOrder() {
         let target = WorktreeSidebar.cycleTarget(
             in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
             from: URL(fileURLWithPath: "/repo/main"),
             offset: 1)
         #expect(target?.branch == "feature")
@@ -24,6 +26,7 @@ struct WorktreeCycleTests {
     @Test func previousFollowsSidebarOrder() {
         let target = WorktreeSidebar.cycleTarget(
             in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
             from: URL(fileURLWithPath: "/repo/review"),
             offset: -1)
         #expect(target?.branch == "feature")
@@ -32,6 +35,7 @@ struct WorktreeCycleTests {
     @Test func nextWrapsFromLastToFirst() {
         let target = WorktreeSidebar.cycleTarget(
             in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
             from: URL(fileURLWithPath: "/repo/review"),
             offset: 1)
         #expect(target?.branch == "main")
@@ -40,6 +44,7 @@ struct WorktreeCycleTests {
     @Test func previousWrapsFromFirstToLast() {
         let target = WorktreeSidebar.cycleTarget(
             in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
             from: URL(fileURLWithPath: "/repo/main"),
             offset: -1)
         #expect(target?.branch == "review")
@@ -49,6 +54,7 @@ struct WorktreeCycleTests {
         // A non-canonical spelling of the current path still matches its row.
         let target = WorktreeSidebar.cycleTarget(
             in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
             from: URL(fileURLWithPath: "/repo/./feature/"),
             offset: 1)
         #expect(target?.branch == "review")
@@ -57,18 +63,23 @@ struct WorktreeCycleTests {
     @Test func unknownCurrentLandsOnFirst() {
         let target = WorktreeSidebar.cycleTarget(
             in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
             from: URL(fileURLWithPath: "/elsewhere"),
             offset: 1)
         #expect(target?.branch == "main")
     }
 
     @Test func nilCurrentLandsOnFirst() {
-        let target = WorktreeSidebar.cycleTarget(in: Self.worktrees, from: nil, offset: -1)
+        let target = WorktreeSidebar.cycleTarget(
+            in: Self.worktrees,
+            activeWorktreePaths: Self.allActive,
+            from: nil,
+            offset: -1)
         #expect(target?.branch == "main")
     }
 
     @Test func emptyListHasNoTarget() {
-        #expect(WorktreeSidebar.cycleTarget(in: [], from: nil, offset: 1) == nil)
+        #expect(WorktreeSidebar.cycleTarget(in: [], activeWorktreePaths: [], from: nil, offset: 1) == nil)
     }
 
     /// A cwd spelled with different case than git's canonical worktree path
@@ -88,18 +99,42 @@ struct WorktreeCycleTests {
         guard fm.fileExists(atPath: miscased.path) else { return }
 
         let worktree = Worktree(path: base, branch: "main", isMain: true, isDetached: false)
+        let active = Set([WorktreeWorkspaceManager.key(base)])
 
         #expect(WorktreeSidebar.activeWorktree(in: [worktree], cwd: miscased)?.branch == "main")
-        #expect(WorktreeSidebar.cycleTarget(in: [worktree], from: miscased, offset: 1) == nil)
+        #expect(WorktreeSidebar.cycleTarget(in: [worktree], activeWorktreePaths: active, from: miscased, offset: 1) == nil)
     }
 
     @Test func singleEntryListHasNothingToSwitchTo() {
         let only = [Self.worktrees[0]]
         let target = WorktreeSidebar.cycleTarget(
             in: only,
+            activeWorktreePaths: Set(only.map { WorktreeWorkspaceManager.key($0.path) }),
             from: URL(fileURLWithPath: "/repo/main"),
             offset: 1)
         #expect(target == nil)
+    }
+
+    @Test func skipsInactiveWorktrees() {
+        let active = Set([
+            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/main")),
+            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/review")),
+        ])
+        let target = WorktreeSidebar.cycleTarget(
+            in: Self.worktrees,
+            activeWorktreePaths: active,
+            from: URL(fileURLWithPath: "/repo/main"),
+            offset: 1)
+        #expect(target?.branch == "review")
+    }
+
+    @Test func fewerThanTwoActiveWorktreesHasNoTarget() {
+        let active = Set([WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/main"))])
+        #expect(WorktreeSidebar.cycleTarget(
+            in: Self.worktrees,
+            activeWorktreePaths: active,
+            from: URL(fileURLWithPath: "/repo/main"),
+            offset: 1) == nil)
     }
 }
 

@@ -156,6 +156,22 @@ struct WorktreeSidebarViewModelTests {
         #expect(WorktreeSidebar.filter(worktrees, query: "zzz").isEmpty)
     }
 
+    @Test func activeFirstPreservesOrderWithinGroups() {
+        let worktrees = [
+            Worktree(path: URL(fileURLWithPath: "/repo/main"), branch: "main", isMain: true, isDetached: false),
+            Worktree(path: URL(fileURLWithPath: "/repo/feature"), branch: "feature", isMain: false, isDetached: false),
+            Worktree(path: URL(fileURLWithPath: "/repo/review"), branch: "review", isMain: false, isDetached: false),
+        ]
+        let active = Set([
+            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/feature")),
+            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/review")),
+        ])
+
+        #expect(WorktreeSidebar.activeFirst(worktrees, activeWorktreePaths: active).map(\.branch) == [
+            "feature", "review", "main",
+        ])
+    }
+
     @Test func resolveCwdPrefersPwdThenConfiguredDirectory() {
         #expect(WorktreeSidebar.resolveCwd(pwd: "/live/pwd", configuredWorkingDirectory: "/config")?.path == "/live/pwd")
         #expect(WorktreeSidebar.resolveCwd(pwd: nil, configuredWorkingDirectory: "/config")?.path == "/config")

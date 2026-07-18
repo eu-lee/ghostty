@@ -37,7 +37,19 @@ final class WorktreeWorkspaceManager: NSObject {
 
     /// The worktree path bound to the currently attached surface tree. Nil
     /// until the window's original tree is adopted on the first switch.
-    var activePath: URL?
+    var activePath: URL? {
+        didSet { notifyActiveWorktreesChanged() }
+    }
+
+    var onActiveWorktreesChanged: ((Set<URL>) -> Void)?
+
+    var activeWorktreePaths: Set<URL> {
+        var paths = Set(detached.keys)
+        if let activePath {
+            paths.insert(Self.key(activePath))
+        }
+        return paths
+    }
 
     override init() {
         super.init()
@@ -61,20 +73,22 @@ final class WorktreeWorkspaceManager: NSObject {
     /// canonicalization (case + symlinks) so differently-spelled paths for
     /// the same directory can't create two workspaces (see
     /// `WorktreeSidebar.canonicalPath`).
-    static func key(_ url: URL) -> URL {
+    nonisolated static func key(_ url: URL) -> URL {
         URL(fileURLWithPath: WorktreeSidebar.canonicalPath(url))
     }
 
     /// Store a workspace that is being detached from the view hierarchy.
     func detach(_ workspace: Workspace) {
         detached[Self.key(workspace.worktreePath)] = workspace
+        notifyActiveWorktreesChanged()
     }
 
     /// Remove and return the workspace for the given worktree so its tree can
     /// be attached. Nil when the worktree has no workspace yet (first visit —
     /// the caller creates one lazily).
     func removeForAttach(_ path: URL) -> Workspace? {
-        detached.removeValue(forKey: Self.key(path))
+        defer { notifyActiveWorktreesChanged() }
+        return detached.removeValue(forKey: Self.key(path))
     }
 
     /// A deterministic detached workspace, used as a fallback target when the
@@ -97,6 +111,7 @@ final class WorktreeWorkspaceManager: NSObject {
     func removeAll() {
         detached.removeAll()
         activePath = nil
+        notifyActiveWorktreesChanged()
     }
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
@@ -116,6 +131,11 @@ final class WorktreeWorkspaceManager: NSObject {
         } else {
             detached[entry.key]?.tree = newTree
         }
+        notifyActiveWorktreesChanged()
+    }
+
+    private func notifyActiveWorktreesChanged() {
+        onActiveWorktreesChanged?(activeWorktreePaths)
     }
 }
 

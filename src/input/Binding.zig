@@ -799,6 +799,9 @@ pub const Action = union(enum) {
     /// Toggle the worktree sidebar.
     toggle_worktree_sidebar,
 
+    /// Show the worktree picker.
+    worktree_picker,
+
     /// Toggle the quick terminal.
     ///
     /// The quick terminal, also known as the "Quake-style" or drop-down
@@ -1409,6 +1412,7 @@ pub const Action = union(enum) {
             .toggle_mouse_reporting,
             .toggle_command_palette,
             .toggle_worktree_sidebar,
+            .worktree_picker,
             .toggle_background_opacity,
             .show_on_screen_keyboard,
             .reset_window_size,
@@ -3335,6 +3339,19 @@ test "parse: action no parameters" {
         try parseSingle("a=ignore"),
     );
     try testing.expectError(Error.InvalidFormat, parseSingle("a=ignore:A"));
+}
+
+test "parse: action worktree_picker" {
+    const testing = std.testing;
+
+    try testing.expectEqual(
+        Binding{
+            .trigger = .{ .key = .{ .unicode = 'a' } },
+            .action = .{ .worktree_picker = {} },
+        },
+        try parseSingle("a=worktree_picker"),
+    );
+    try testing.expectError(Error.InvalidFormat, parseSingle("a=worktree_picker:next"));
 }
 
 test "parse: action with string" {

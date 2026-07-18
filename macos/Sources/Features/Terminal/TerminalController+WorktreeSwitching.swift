@@ -11,10 +11,48 @@ extension TerminalController {
         if let worktreeWorkspaces { return worktreeWorkspaces }
         let manager = WorktreeWorkspaceManager()
         manager.onWorkspaceStateChange = { [weak self] in
-            self?.refreshActiveWorktreePaths()
+            self?.syncWorktreeStatus()
         }
         worktreeWorkspaces = manager
         return manager
+    }
+
+    func syncActiveWorktreePaths(_ paths: Set<URL>? = nil) {
+        syncWorktreeStatus(activePaths: paths)
+    }
+
+    func refreshActiveWorktreePaths() {
+        syncWorktreeStatus()
+    }
+
+    func syncWorktreeStatus(activePaths paths: Set<URL>? = nil) {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+        var active = paths ?? worktreeWorkspaces?.activeWorktreePaths ?? []
+        if active.isEmpty, let selected = viewModel.selectedWorktree {
+            active.insert(WorktreeWorkspaceManager.key(selected.path))
+        }
+        viewModel.setActiveWorktreePaths(active)
+
+        var bellWorktrees: Set<URL> = []
+        let attachedPath = worktreeWorkspaces?.activePath
+            ?? viewModel.selectedWorktree.map { WorktreeWorkspaceManager.key($0.path) }
+        if let attachedPath, surfaceTree.contains(where: { $0.bell }) {
+            bellWorktrees.insert(WorktreeWorkspaceManager.key(attachedPath))
+        }
+        if let worktreeWorkspaces {
+            bellWorktrees.formUnion(worktreeWorkspaces.detached.compactMap { key, workspace in
+                workspace.tree.contains(where: { $0.bell }) ? key : nil
+            })
+        }
+        viewModel.setBellWorktreePaths(bellWorktrees)
+    }
+
+    func setupWorktreeStatusPublisher() {
+        worktreeStatusCancellable = surfaceValuesPublisher(valueKeyPath: \.bell, publisherKeyPath: \.$bell)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncWorktreeStatus()
+            }
     }
 
     /// True when any surface in this window — the attached tree or a detached
@@ -49,7 +87,7 @@ extension TerminalController {
             // binding is adopted and the highlight agrees.
             manager.activePath = targetKey
             viewModel.selectedWorktree = worktree
-            refreshActiveWorktreePaths()
+            syncWorktreeStatus()
             return
         }
 
@@ -59,7 +97,7 @@ extension TerminalController {
             // nowhere to detach it to. Refuse to switch rather than silently
             // dropping live surfaces.
             Ghostty.logger.warning("worktree-sidebar: current tree has no worktree binding; switch aborted")
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
             return
         }
 
@@ -90,7 +128,7 @@ extension TerminalController {
 
         manager.activePath = targetKey
         viewModel.selectedWorktree = worktree
-        refreshActiveWorktreePaths()
+        syncWorktreeStatus()
 
         if let focusTarget {
             focusedSurface = focusTarget
@@ -100,12 +138,14 @@ extension TerminalController {
         }
     }
 
-    /// Cycle to the next/previous worktree in sidebar order, wrapping.
+    /// Cycle to the next/previous active worktree in sidebar order, wrapping.
     /// Backs the `goto_worktree` keybind (see `gotoWorktree`).
     func cycleWorktree(_ direction: Ghostty.WorktreeFocusDirection, viewModel: WorktreeSidebarViewModel) {
         let current = worktreeWorkspaces?.activePath ?? viewModel.selectedWorktree?.path
+        syncActiveWorktreePaths()
         let target = WorktreeSidebar.cycleTarget(
             in: viewModel.worktrees,
+            activeWorktreePaths: viewModel.activeWorktreePaths,
             from: current,
             offset: direction == .next ? 1 : -1)
         guard let target else { return }
@@ -132,7 +172,7 @@ extension TerminalController {
             viewModel.selectedWorktree = viewModel.worktrees
                 .first { WorktreeWorkspaceManager.key($0.path) == key }
         }
-        refreshActiveWorktreePaths()
+        syncWorktreeStatus()
 
         if let focusTarget = workspace.lastFocusedSurface ?? workspace.tree.root?.leftmostLeaf() {
             focusedSurface = focusTarget
@@ -140,26 +180,6 @@ extension TerminalController {
                 Ghostty.moveFocus(to: focusTarget)
             }
         }
-    }
-
-    /// Publish the set of live worktree workspaces for sidebar actions.
-    func refreshActiveWorktreePaths() {
-        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
-
-        var active: Set<URL> = []
-        if let manager = worktreeWorkspaces {
-            if let activePath = manager.activePath {
-                active.insert(WorktreeWorkspaceManager.key(activePath))
-            } else if let selected = viewModel.selectedWorktree {
-                active.insert(WorktreeWorkspaceManager.key(selected.path))
-            }
-
-            active.formUnion(manager.detached.keys)
-        } else if let selected = viewModel.selectedWorktree {
-            active.insert(WorktreeWorkspaceManager.key(selected.path))
-        }
-
-        viewModel.updateActiveWorktreePaths(active)
     }
 
     func deactivateWorktree(_ worktree: Worktree) {
@@ -185,17 +205,17 @@ extension TerminalController {
         if let workspace = manager.workspace(for: key) {
             guard await confirmWorkspaceTeardownIfNeeded(workspace.tree) else { return false }
             manager.removeDetached(for: key)
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
             return true
         }
 
         guard activeKey == key else {
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
             return false
         }
 
         guard let fallback = deactivationFallback(for: worktree, activeKey: key, viewModel: viewModel) else {
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
             return false
         }
 
@@ -203,12 +223,12 @@ extension TerminalController {
 
         switchToWorktree(fallback)
         guard manager.workspace(for: key) != nil else {
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
             return false
         }
 
         manager.removeDetached(for: key)
-        refreshActiveWorktreePaths()
+        syncActiveWorktreePaths()
         return true
     }
 
@@ -216,20 +236,20 @@ extension TerminalController {
         guard WorktreeSidebar.canRemove(worktree) else { return }
         guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
 
-        refreshActiveWorktreePaths()
+        syncActiveWorktreePaths()
         if viewModel.isActive(worktree) {
             let deactivated = await deactivateWorktreeSession(worktree)
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
             if !deactivated, viewModel.isActive(worktree) {
                 return
             }
 
             await viewModel.refresh(cwd: worktreeSidebarCwd)
-            refreshActiveWorktreePaths()
+            syncActiveWorktreePaths()
         }
 
         await viewModel.removeWorktree(worktree)
-        refreshActiveWorktreePaths()
+        syncActiveWorktreePaths()
     }
 
     private func deactivationFallback(

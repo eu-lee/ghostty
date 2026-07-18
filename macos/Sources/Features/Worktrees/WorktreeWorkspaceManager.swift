@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 #if os(macOS)
@@ -35,13 +36,28 @@ final class WorktreeWorkspaceManager: NSObject {
     /// Detached workspaces keyed by standardized worktree path.
     private(set) var detached: [URL: Workspace] = [:]
 
-    /// Called when the attached/detached workspace set changes outside the
-    /// controller's direct switch path, such as a detached surface exiting.
-    var onWorkspaceStateChange: (() -> Void)?
+    /// Per-detached-workspace bell subscriptions. Detached trees are not part
+    /// of `BaseTerminalController.surfaceTree`, so the window-level bell
+    /// publisher cannot see them.
+    private var detachedBellCancellables: [URL: AnyCancellable] = [:]
 
     /// The worktree path bound to the currently attached surface tree. Nil
     /// until the window's original tree is adopted on the first switch.
-    var activePath: URL?
+    var activePath: URL? {
+        didSet { notifyActiveWorktreesChanged() }
+    }
+
+    var onActiveWorktreesChanged: ((Set<URL>) -> Void)?
+
+    var onWorkspaceStateChange: (() -> Void)?
+
+    var activeWorktreePaths: Set<URL> {
+        var paths = Set(detached.keys)
+        if let activePath {
+            paths.insert(Self.key(activePath))
+        }
+        return paths
+    }
 
     override init() {
         super.init()
@@ -65,25 +81,26 @@ final class WorktreeWorkspaceManager: NSObject {
     /// canonicalization (case + symlinks) so differently-spelled paths for
     /// the same directory can't create two workspaces (see
     /// `WorktreeSidebar.canonicalPath`).
-    static func key(_ url: URL) -> URL {
+    nonisolated static func key(_ url: URL) -> URL {
         URL(fileURLWithPath: WorktreeSidebar.canonicalPath(url))
     }
 
     /// Store a workspace that is being detached from the view hierarchy.
     func detach(_ workspace: Workspace) {
-        detached[Self.key(workspace.worktreePath)] = workspace
-        onWorkspaceStateChange?()
+        let key = Self.key(workspace.worktreePath)
+        detached[key] = workspace
+        observeDetachedBell(for: key, workspace: workspace)
+        notifyActiveWorktreesChanged()
     }
 
     /// Remove and return the workspace for the given worktree so its tree can
     /// be attached. Nil when the worktree has no workspace yet (first visit —
     /// the caller creates one lazily).
     func removeForAttach(_ path: URL) -> Workspace? {
-        let removed = detached.removeValue(forKey: Self.key(path))
-        if removed != nil {
-            onWorkspaceStateChange?()
-        }
-        return removed
+        let key = Self.key(path)
+        detachedBellCancellables.removeValue(forKey: key)
+        defer { notifyActiveWorktreesChanged() }
+        return detached.removeValue(forKey: key)
     }
 
     /// Return the detached workspace for `path` without removing it.
@@ -94,9 +111,11 @@ final class WorktreeWorkspaceManager: NSObject {
     /// Drop a detached workspace, releasing its surfaces and ptys.
     @discardableResult
     func removeDetached(for path: URL) -> Workspace? {
-        let removed = detached.removeValue(forKey: Self.key(path))
+        let key = Self.key(path)
+        let removed = detached.removeValue(forKey: key)
         if removed != nil {
-            onWorkspaceStateChange?()
+            detachedBellCancellables.removeValue(forKey: key)
+            notifyActiveWorktreesChanged()
         }
         return removed
     }
@@ -120,8 +139,9 @@ final class WorktreeWorkspaceManager: NSObject {
     /// Called when the window closes.
     func removeAll() {
         detached.removeAll()
+        detachedBellCancellables.removeAll()
         activePath = nil
-        onWorkspaceStateChange?()
+        notifyActiveWorktreesChanged()
     }
 
     @objc private func ghosttyDidCloseSurface(_ notification: Notification) {
@@ -138,10 +158,29 @@ final class WorktreeWorkspaceManager: NSObject {
             // (rows mirror git worktrees, not workspaces); revisiting the
             // worktree lazily creates a fresh workspace.
             detached.removeValue(forKey: entry.key)
-            onWorkspaceStateChange?()
+            detachedBellCancellables.removeValue(forKey: entry.key)
         } else {
             detached[entry.key]?.tree = newTree
+            if let workspace = detached[entry.key] {
+                observeDetachedBell(for: entry.key, workspace: workspace)
+            }
         }
+        notifyActiveWorktreesChanged()
+    }
+
+    private func observeDetachedBell(for key: URL, workspace: Workspace) {
+        detachedBellCancellables[key] = workspace.tree
+            .valuesPublisher(valueKeyPath: \.bell, publisherKeyPath: \.$bell)
+            .map { _ in () }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                self?.onWorkspaceStateChange?()
+            }
+    }
+
+    private func notifyActiveWorktreesChanged() {
+        onActiveWorktreesChanged?(activeWorktreePaths)
+        onWorkspaceStateChange?()
     }
 }
 

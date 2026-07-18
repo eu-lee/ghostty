@@ -7,17 +7,20 @@ final class WorktreeSidebarViewController: NSSplitViewController {
     /// windows inherit the collapsed state and width the sidebar last had in
     /// any window, and each window tracks its own from there.
     private static var sessionIsCollapsed = true
-    private static var sessionWidth: CGFloat?
+    private static var sessionWidth: CGFloat = 300
 
+    private let ghostty: Ghostty.App
     private let terminalViewContainer: TerminalViewContainer
     let viewModel: WorktreeSidebarViewModel
     private var sidebarSplitViewItem: NSSplitViewItem?
     private var didApplySessionWidth = false
 
     init(
+        ghostty: Ghostty.App,
         contentView terminalViewContainer: TerminalViewContainer,
         viewModel: WorktreeSidebarViewModel? = nil
     ) {
+        self.ghostty = ghostty
         self.terminalViewContainer = terminalViewContainer
         // Construct the default view model in the init body (main-actor isolated)
         // rather than as a default argument, which Swift evaluates in a nonisolated
@@ -33,6 +36,7 @@ final class WorktreeSidebarViewController: NSSplitViewController {
         let splitView = WorktreeSidebarSplitView()
         splitView.isVertical = true
         splitView.dividerStyle = .thin
+        splitView.ghostty = ghostty
         splitView.terminalViewContainer = terminalViewContainer
         self.splitView = splitView
     }
@@ -45,12 +49,12 @@ final class WorktreeSidebarViewController: NSSplitViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let sidebarViewController = WorktreeSidebarListViewController(viewModel: viewModel)
+        let sidebarViewController = WorktreeSidebarListViewController(ghostty: ghostty, viewModel: viewModel)
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
         sidebarItem.canCollapse = true
         sidebarItem.isCollapsed = Self.sessionIsCollapsed
-        sidebarItem.minimumThickness = 180
-        sidebarItem.maximumThickness = 280
+        sidebarItem.minimumThickness = 240
+        sidebarItem.maximumThickness = 420
 
         let terminalViewController = NSViewController()
         terminalViewController.view = terminalViewContainer
@@ -81,9 +85,8 @@ final class WorktreeSidebarViewController: NSSplitViewController {
         // positions set before layout don't stick).
         if !didApplySessionWidth {
             didApplySessionWidth = true
-            if let width = Self.sessionWidth,
-               !(sidebarSplitViewItem?.isCollapsed ?? true) {
-                splitView.setPosition(width, ofDividerAt: 0)
+            if !(sidebarSplitViewItem?.isCollapsed ?? true) {
+                applySessionWidth()
             }
         }
     }
@@ -112,6 +115,7 @@ final class WorktreeSidebarViewController: NSSplitViewController {
 
     override func toggleSidebar(_ sender: Any?) {
         guard let sidebarSplitViewItem else { return }
+        let willExpand = sidebarSplitViewItem.isCollapsed
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
@@ -119,14 +123,32 @@ final class WorktreeSidebarViewController: NSSplitViewController {
             sidebarSplitViewItem.animator().isCollapsed = !sidebarSplitViewItem.isCollapsed
         } completionHandler: {
             Self.sessionIsCollapsed = sidebarSplitViewItem.isCollapsed
+            if willExpand {
+                self.applySessionWidth()
+            }
             self.view.invalidateIntrinsicContentSize()
         }
+    }
+
+    private func applySessionWidth() {
+        guard let sidebarSplitViewItem else { return }
+        let width = min(
+            max(Self.sessionWidth, sidebarSplitViewItem.minimumThickness),
+            sidebarSplitViewItem.maximumThickness
+        )
+        splitView.setPosition(width, ofDividerAt: 0)
     }
 }
 
 private final class WorktreeSidebarSplitView: NSSplitView {
+    weak var ghostty: Ghostty.App?
     weak var terminalViewContainer: TerminalViewContainer?
     weak var sidebarItem: NSSplitViewItem?
+
+    override var dividerColor: NSColor {
+        guard let ghostty else { return super.dividerColor }
+        return NSColor(ghostty.config.splitDividerColor)
+    }
 
     override var intrinsicContentSize: NSSize {
         if sidebarItem?.isCollapsed ?? true,
@@ -139,9 +161,11 @@ private final class WorktreeSidebarSplitView: NSSplitView {
 }
 
 private final class WorktreeSidebarListViewController: NSViewController {
+    private let ghostty: Ghostty.App
     private let viewModel: WorktreeSidebarViewModel
 
-    init(viewModel: WorktreeSidebarViewModel) {
+    init(ghostty: Ghostty.App, viewModel: WorktreeSidebarViewModel) {
+        self.ghostty = ghostty
         self.viewModel = viewModel
         super.init(nibName: nil, bundle: nil)
     }
@@ -152,28 +176,16 @@ private final class WorktreeSidebarListViewController: NSViewController {
     }
 
     override func loadView() {
-        let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = .sidebar
-        visualEffectView.blendingMode = .withinWindow
-        visualEffectView.state = .active
-
         let hostingView = NSHostingView(
-            rootView: WorktreeSidebarList(viewModel: viewModel)
+            rootView: WorktreeSidebarList(ghostty: ghostty, viewModel: viewModel)
         )
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        visualEffectView.addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: visualEffectView.topAnchor),
-            hostingView.leadingAnchor.constraint(equalTo: visualEffectView.leadingAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: visualEffectView.bottomAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: visualEffectView.trailingAnchor),
-        ])
-
-        view = visualEffectView
+        hostingView.translatesAutoresizingMaskIntoConstraints = true
+        view = hostingView
     }
 }
 
 private struct WorktreeSidebarList: View {
+    @ObservedObject var ghostty: Ghostty.App
     @ObservedObject var viewModel: WorktreeSidebarViewModel
 
     @State private var isNamingNewWorktree = false
@@ -184,6 +196,23 @@ private struct WorktreeSidebarList: View {
     private enum NewWorktreeField: Hashable {
         case branch
         case base
+    }
+
+    private var backgroundColor: Color {
+        ghostty.config.backgroundColor
+    }
+
+    private var foregroundColor: Color {
+        ghostty.config.foregroundColor
+    }
+
+    private var secondaryColor: Color {
+        foregroundColor.opacity(0.5)
+    }
+
+    private var terminalFont: Font {
+        // TODO: Use the configured terminal font family for the sidebar.
+        .system(size: 12, design: .monospaced)
     }
 
     var body: some View {
@@ -198,25 +227,31 @@ private struct WorktreeSidebarList: View {
                 newWorktreeSection
             }
         }
+        .font(terminalFont)
+        .foregroundStyle(foregroundColor)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(backgroundColor)
     }
 
     private var filterField: some View {
         HStack(spacing: 6) {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .foregroundStyle(.secondary)
+            Text(">")
+                .foregroundStyle(secondaryColor)
             TextField("Filter", text: $viewModel.filterText)
                 .textFieldStyle(.plain)
+                .font(terminalFont)
+                .foregroundStyle(foregroundColor)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .background(backgroundColor)
     }
 
     private var emptyState: some View {
         VStack {
             Spacer()
             Text("Not a git repository")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
             Spacer()
@@ -230,15 +265,21 @@ private struct WorktreeSidebarList: View {
     /// small inline message here — never an alert (M4 guide).
     private var newWorktreeSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Divider()
+            Rectangle()
+                .fill(ghostty.config.splitDividerColor)
+                .frame(height: 1)
+                .padding(.horizontal, -10)
+                .padding(.bottom, 4)
 
             if isNamingNewWorktree {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Image(systemName: "plus.circle")
-                            .foregroundStyle(.secondary)
+                        Text("+")
+                            .foregroundStyle(secondaryColor)
                         TextField("Branch name", text: $newBranchName)
                             .textFieldStyle(.plain)
+                            .font(terminalFont)
+                            .foregroundStyle(foregroundColor)
                             .disabled(viewModel.isCreatingWorktree)
                             .focused($newWorktreeFieldFocused, equals: .branch)
                             .onAppear { newWorktreeFieldFocused = .branch }
@@ -252,10 +293,12 @@ private struct WorktreeSidebarList: View {
 
                     HStack(spacing: 6) {
                         Text("from")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(secondaryColor)
                             .frame(width: 28, alignment: .trailing)
                         TextField(viewModel.defaultBaseBranch ?? "main HEAD", text: $newBaseRef)
                             .textFieldStyle(.plain)
+                            .font(terminalFont)
+                            .foregroundStyle(foregroundColor)
                             .disabled(viewModel.isCreatingWorktree)
                             .focused($newWorktreeFieldFocused, equals: .base)
                             .onSubmit(submitNewWorktree)
@@ -269,19 +312,19 @@ private struct WorktreeSidebarList: View {
                     isNamingNewWorktree = true
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "plus.circle")
+                        Text("+")
                         Text("New worktree…")
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryColor)
             }
 
             if let error = viewModel.createError {
                 Text(error)
-                    .font(.caption)
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(.red)
                     .lineLimit(3)
                     .help(error)
@@ -289,6 +332,7 @@ private struct WorktreeSidebarList: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .background(backgroundColor)
     }
 
     private func submitNewWorktree() {
@@ -314,38 +358,49 @@ private struct WorktreeSidebarList: View {
         viewModel.clearCreateError()
     }
 
-    private var list: some View {
-        List(viewModel.filteredWorktrees, id: \.path) { worktree in
-            WorktreeSidebarRowView(
-                worktree: worktree,
-                isActive: viewModel.isActive(worktree)
-            )
-            // Whole row is clickable; the click switches workspaces (M3).
-            .contentShape(Rectangle())
-            .onTapGesture {
-                viewModel.select(worktree)
-            }
-            .contextMenu {
-                if viewModel.isActive(worktree) {
-                    Button("Close Session") {
-                        viewModel.deactivate(worktree)
-                    }
-                }
+    /// Filtered rows with live (active) worktrees grouped above inactive ones,
+    /// preserving the pinned-main order within each group.
+    private var orderedWorktrees: [Worktree] {
+        WorktreeSidebar.activeFirst(
+            viewModel.filteredWorktrees,
+            activeWorktreePaths: viewModel.activeWorktreePaths)
+    }
 
-                if WorktreeSidebar.canRemove(worktree) {
-                    Button("Remove Worktree…", role: .destructive) {
-                        confirmRemove(worktree)
+    private var list: some View {
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(orderedWorktrees, id: \.path) { worktree in
+                    WorktreeSidebarRowView(
+                        worktree: worktree,
+                        isActive: viewModel.isLive(worktree),
+                        isSelected: worktree.path == viewModel.selectedWorktree?.path,
+                        hasBell: viewModel.hasBell(worktree),
+                        foregroundColor: foregroundColor,
+                        secondaryColor: secondaryColor,
+                        terminalFont: terminalFont
+                    )
+                    // Whole row is clickable; the click switches workspaces (M3).
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.select(worktree)
+                    }
+                    .contextMenu {
+                        if viewModel.isActive(worktree) {
+                            Button("Close Session") {
+                                viewModel.deactivate(worktree)
+                            }
+                        }
+
+                        if WorktreeSidebar.canRemove(worktree) {
+                            Button("Remove Worktree...", role: .destructive) {
+                                confirmRemove(worktree)
+                            }
+                        }
                     }
                 }
             }
-            .listRowBackground(
-                viewModel.isActive(worktree)
-                    ? Color.accentColor.opacity(0.18)
-                    : Color.clear
-            )
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
+        .background(backgroundColor)
     }
 
     private var removeErrorSection: some View {
@@ -426,7 +481,15 @@ private struct WorktreeSidebarList: View {
 
 private struct WorktreeSidebarRowView: View {
     let worktree: Worktree
+    /// Has a live workspace (session) in this window.
     let isActive: Bool
+    /// Is the currently switched-to worktree (the `*` row).
+    let isSelected: Bool
+    /// Has a surface with an active bell in this workspace.
+    let hasBell: Bool
+    let foregroundColor: Color
+    let secondaryColor: Color
+    let terminalFont: Font
 
     private var title: String {
         WorktreeSidebar.displayName(for: worktree)
@@ -434,24 +497,40 @@ private struct WorktreeSidebarRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: worktree.isDetached ? "arrow.triangle.pull" : "arrow.triangle.branch")
-                .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+            // `*` marks the currently switched-to worktree, like the current
+            // branch in `git branch` output.
+            Text(isSelected ? "*" : " ")
+                .foregroundStyle(foregroundColor)
+                .frame(width: 12, alignment: .leading)
             Text(title)
                 // Truncate long branch names in the middle, with a tooltip
                 // showing the full name.
                 .truncationMode(.middle)
                 .lineLimit(1)
                 .fontWeight(worktree.isMain ? .semibold : .regular)
+                // Live worktrees read at full strength; inactive (and detached)
+                // ones dim, so the active group stands out from the rest.
+                .foregroundStyle((isActive && !worktree.isDetached) ? foregroundColor : secondaryColor)
             Spacer(minLength: 0)
+            if hasBell {
+                Image(systemName: "bell.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .help("Bell")
+            }
         }
-        .padding(.vertical, 2)
+        .font(terminalFont)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? foregroundColor.opacity(0.15) : Color.clear)
         .help(title)
     }
 }
 
 extension TerminalController {
     func installWorktreeSidebar(around container: TerminalViewContainer, in window: NSWindow) {
-        let controller = WorktreeSidebarViewController(contentView: container)
+        let controller = WorktreeSidebarViewController(ghostty: ghostty, contentView: container)
         worktreeSidebarViewController = controller
         window.contentViewController = controller
 
@@ -465,6 +544,8 @@ extension TerminalController {
         controller.viewModel.onDelete = { [weak self] worktree in
             self?.deleteWorktree(worktree)
         }
+        setupWorktreeStatusPublisher()
+        syncWorktreeStatus()
     }
 
     /// The cwd to source worktrees from: the window's first surface's live pwd,
@@ -492,7 +573,7 @@ extension TerminalController {
         let cwd = worktreeSidebarCwd
         Task { @MainActor in
             await viewModel.refresh(cwd: cwd)
-            self.refreshActiveWorktreePaths()
+            self.syncWorktreeStatus()
         }
     }
 
@@ -516,5 +597,30 @@ extension TerminalController {
 
     @IBAction func toggleWorktreeSidebar(_ sender: Any?) {
         toggleWorktreeSidebar()
+    }
+
+    func showWorktreePicker() {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        let present = {
+            self.syncActiveWorktreePaths()
+            self.commandPaletteIsShowing = false
+            self.worktreePickerIsShowing = true
+            _ = self.focusedSurface?.resignFirstResponder()
+        }
+
+        if viewModel.hasLoaded {
+            present()
+        } else {
+            let cwd = worktreeSidebarCwd
+            Task { @MainActor in
+                await viewModel.refresh(cwd: cwd)
+                present()
+            }
+        }
+    }
+
+    @IBAction func showWorktreePicker(_ sender: Any?) {
+        showWorktreePicker()
     }
 }

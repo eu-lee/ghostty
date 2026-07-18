@@ -37,6 +37,10 @@ class TerminalWindow: NSWindow {
     /// Sets up our tab context menu
     private var tabMenuObserver: NSObjectProtocol?
 
+    /// Keeps the native tab accessory bell indicator in sync with the
+    /// terminal controller's aggregate bell state.
+    private var tabBellObserver: NSObjectProtocol?
+
     /// Handles inline tab title editing for this host window.
     private(set) lazy var tabTitleEditor = TabTitleEditor(
         hostWindow: self,
@@ -92,6 +96,20 @@ class TerminalWindow: NSWindow {
         ) { [weak self] n in
             guard let self, let menu = n.object as? NSMenu else { return }
             self.configureTabContextMenuIfNeeded(menu)
+        }
+        tabBellObserver = NotificationCenter.default.addObserver(
+            forName: .terminalWindowBellDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let controller = notification.object as? BaseTerminalController,
+                  controller.window === self,
+                  let hasBell = notification.userInfo?[Notification.Name.terminalWindowHasBellKey] as? Bool
+            else {
+                return
+            }
+            self.updateTabBellIndicator(hasBell: hasBell)
         }
 
         // This is required so that window restoration properly creates our tabs
@@ -166,9 +184,11 @@ class TerminalWindow: NSWindow {
         stackView.spacing = 4
         stackView.alignment = .centerY
         stackView.addArrangedSubview(tabColorIndicator)
+        stackView.addArrangedSubview(tabBellIndicator)
         stackView.addArrangedSubview(keyEquivalentLabel)
         stackView.addArrangedSubview(resetZoomTabButton)
         tab.accessoryView = stackView
+        updateTabBellIndicator(hasBell: terminalController?.bell ?? false)
 
         // Get our saved level
         level = UserDefaults.ghostty.value(forKey: Self.defaultLevelKey) as? NSWindow.Level ?? .normal
@@ -193,6 +213,10 @@ class TerminalWindow: NSWindow {
 
     override func close() {
         tabTitleEditor.finishEditing(commit: true)
+        if let tabBellObserver {
+            NotificationCenter.default.removeObserver(tabBellObserver)
+            self.tabBellObserver = nil
+        }
         NotificationCenter.default.post(name: Self.terminalWillCloseNotification, object: self)
         super.close()
     }
@@ -200,11 +224,13 @@ class TerminalWindow: NSWindow {
     override func becomeKey() {
         super.becomeKey()
         resetZoomTabButton.contentTintColor = .controlAccentColor
+        updateTabBellIndicator()
     }
 
     override func resignKey() {
         super.resignKey()
         resetZoomTabButton.contentTintColor = .secondaryLabelColor
+        updateTabBellIndicator()
         tabTitleEditor.finishEditing(commit: true)
     }
 
@@ -353,6 +379,26 @@ class TerminalWindow: NSWindow {
         label.postsFrameChangedNotifications = true
         return label
     }()
+
+    private lazy var tabBellIndicator: NSImageView = {
+        let view = NSImageView()
+        view.image = NSImage(systemSymbolName: "bell.fill", accessibilityDescription: "Bell")
+        view.symbolConfiguration = .init(pointSize: NSFont.smallSystemFontSize, weight: .regular)
+        view.imageScaling = .scaleProportionallyDown
+        view.toolTip = "Bell"
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        view.heightAnchor.constraint(equalToConstant: 14).isActive = true
+        return view
+    }()
+
+    private func updateTabBellIndicator(hasBell: Bool? = nil) {
+        if let hasBell {
+            tabBellIndicator.isHidden = !hasBell
+        }
+        tabBellIndicator.contentTintColor = isKeyWindow ? .systemOrange : .secondaryLabelColor
+    }
 
     // MARK: Surface Zoom
 

@@ -45,17 +45,21 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// this window: the attached tree and any detached workspaces.
     @Published private(set) var activeWorktreePaths: Set<URL> = []
 
-    /// The last worktree-creation failure, as a short user-facing message
-    /// rendered inline in the sidebar (never an alert). Nil when the last
-    /// creation succeeded or the user dismissed the message.
-    @Published private(set) var createError: String?
-
     /// The last worktree-removal failure, rendered inline near the list.
     @Published private(set) var removeError: String?
 
     /// Worktree whose last removal failed with a dirty/untracked-tree style
     /// git error, making a force retry appropriate.
     @Published private(set) var forceRemoveCandidate: Worktree?
+
+    /// The last worktree-creation failure, as a short user-facing message
+    /// rendered inline in the sidebar (never an alert). Nil when the last
+    /// creation succeeded or the user dismissed the message.
+    @Published private(set) var createError: String?
+
+    /// Canonical paths for worktrees with at least one surface whose bell is
+    /// active.
+    @Published private(set) var bellWorktreePaths: Set<URL> = []
 
     /// Invoked when the user picks a worktree row. The M3 switching layer
     /// (TerminalController) wires this to the workspace switch; selection
@@ -91,6 +95,11 @@ final class WorktreeSidebarViewModel: ObservableObject {
         selectedWorktree?.branch
     }
 
+    /// Whether `worktree` already has a live workspace in this window.
+    func isLive(_ worktree: Worktree) -> Bool {
+        activeWorktreePaths.contains(WorktreeWorkspaceManager.key(worktree.path))
+    }
+
     /// Load worktrees for the repository containing `cwd`. A nil cwd (e.g. a
     /// window whose first surface reports no pwd and has no configured
     /// working-directory) resolves to the empty state.
@@ -120,6 +129,18 @@ final class WorktreeSidebarViewModel: ObservableObject {
         } else {
             selectedWorktree = WorktreeSidebar.activeWorktree(in: loaded, cwd: cwd)
         }
+
+        if activeWorktreePaths.isEmpty, let selectedWorktree {
+            activeWorktreePaths = [WorktreeWorkspaceManager.key(selectedWorktree.path)]
+        }
+    }
+
+    func setActiveWorktreePaths(_ paths: Set<URL>) {
+        activeWorktreePaths = Set(paths.map { WorktreeWorkspaceManager.key($0) })
+    }
+
+    func setBellWorktreePaths(_ paths: Set<URL>) {
+        bellWorktreePaths = Set(paths.map { WorktreeWorkspaceManager.key($0) })
     }
 
     /// Forward a row click to the switching layer (see `onSelect`).
@@ -186,8 +207,16 @@ final class WorktreeSidebarViewModel: ObservableObject {
         activeWorktreePaths = Set(paths.map { WorktreeWorkspaceManager.key($0) })
     }
 
+    func updateBellWorktreePaths(_ paths: Set<URL>) {
+        bellWorktreePaths = Set(paths.map { WorktreeWorkspaceManager.key($0) })
+    }
+
     func isActive(_ worktree: Worktree) -> Bool {
         WorktreeSidebar.isActive(worktree, in: activeWorktreePaths)
+    }
+
+    func hasBell(_ worktree: Worktree) -> Bool {
+        WorktreeSidebar.hasBell(worktree, in: bellWorktreePaths)
     }
 
     /// Remove a linked worktree from disk, then refresh the list. Workspace
@@ -242,6 +271,10 @@ enum WorktreeSidebar {
         active.contains(URL(fileURLWithPath: canonicalPath(worktree.path)))
     }
 
+    static func hasBell(_ worktree: Worktree, in bellWorktreePaths: Set<URL>) -> Bool {
+        bellWorktreePaths.contains(URL(fileURLWithPath: canonicalPath(worktree.path)))
+    }
+
     static func canForceRemove(afterGitMessage message: String) -> Bool {
         let lowercased = message.lowercased()
         guard lowercased.contains("force") else { return false }
@@ -293,26 +326,42 @@ enum WorktreeSidebar {
         }
     }
 
+    /// Filtered worktrees with live workspaces first, preserving the input
+    /// order within active and inactive groups.
+    static func activeFirst(_ worktrees: [Worktree], activeWorktreePaths: Set<URL>) -> [Worktree] {
+        let keyed = worktrees.map { (worktree: $0, isActive: activeWorktreePaths.contains(WorktreeWorkspaceManager.key($0.path))) }
+        return keyed.filter { $0.isActive }.map { $0.worktree } +
+            keyed.filter { !$0.isActive }.map { $0.worktree }
+    }
+
     /// The worktree `offset` steps away from `current` in sidebar order,
-    /// wrapping around either end. `current` is matched by standardized path;
-    /// when it is nil or not in the list, the first worktree is returned so
-    /// cycling from an unknown state lands somewhere deterministic. Returns
-    /// nil for an empty list or when the result would be `current` itself
-    /// (a single-entry list): there is nothing to switch to.
-    static func cycleTarget(in worktrees: [Worktree], from current: URL?, offset: Int) -> Worktree? {
-        guard !worktrees.isEmpty else { return nil }
+    /// wrapping around either end, but only among worktrees that already have
+    /// live workspaces. `current` is matched by canonical path; when it is nil
+    /// or not active, the first active worktree is returned so cycling from an
+    /// unknown state lands somewhere deterministic. Returns nil when fewer
+    /// than two worktrees are active.
+    static func cycleTarget(
+        in worktrees: [Worktree],
+        activeWorktreePaths: Set<URL>,
+        from current: URL?,
+        offset: Int
+    ) -> Worktree? {
+        let active = worktrees.filter {
+            activeWorktreePaths.contains(WorktreeWorkspaceManager.key($0.path))
+        }
+        guard active.count >= 2 else { return nil }
 
         let currentPath = current.map { canonicalPath($0) }
-        guard let index = worktrees.firstIndex(where: {
+        guard let index = active.firstIndex(where: {
             canonicalPath($0.path) == currentPath
         }) else {
-            return worktrees.first
+            return active.first
         }
 
-        let count = worktrees.count
+        let count = active.count
         let target = ((index + offset) % count + count) % count
         guard target != index else { return nil }
-        return worktrees[target]
+        return active[target]
     }
 
     /// The conventional location for a new worktree: a visible container

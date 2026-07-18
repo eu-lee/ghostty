@@ -48,6 +48,12 @@ class BaseTerminalController: NSWindowController,
     /// This can be set to show/hide the command palette.
     @Published var commandPaletteIsShowing: Bool = false
 
+    /// This can be set to show/hide the worktree picker.
+    @Published var worktreePickerIsShowing: Bool = false
+
+    /// Subclasses that support worktrees override this with their sidebar model.
+    var worktreePickerViewModel: WorktreeSidebarViewModel? { nil }
+
     /// Set if the terminal view should show the update overlay.
     @Published var updateOverlayIsVisible: Bool = false
 
@@ -1431,6 +1437,9 @@ class BaseTerminalController: NSWindowController,
 
     @IBAction func toggleCommandPalette(_ sender: Any?) {
         commandPaletteIsShowing.toggle()
+        if commandPaletteIsShowing {
+            worktreePickerIsShowing = false
+        }
         if commandPaletteIsShowing {
             // Fix the incorrect focus when toggling from InlineTitleEditor
             // When toggling the command palette from the inline title editor,

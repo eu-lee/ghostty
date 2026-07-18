@@ -64,6 +64,10 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     // worktree-sidebar: Retains the collapsed sidebar shell around the terminal content.
     var worktreeSidebarViewController: WorktreeSidebarViewController?
 
+    override var worktreePickerViewModel: WorktreeSidebarViewModel? {
+        worktreeSidebarViewController?.viewModel
+    }
+
     // worktree-sidebar: Retains detached worktree workspaces (their split trees
     // and ptys) while another worktree is shown. Created on the first switch.
     var worktreeWorkspaces: WorktreeWorkspaceManager?
@@ -1627,11 +1631,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         // keybind fires before any load, load first so there is a list to
         // cycle through.
         if viewModel.hasLoaded {
+            syncActiveWorktreePaths()
             cycleWorktree(direction, viewModel: viewModel)
         } else {
             let cwd = worktreeSidebarCwd
             Task { @MainActor in
                 await viewModel.refresh(cwd: cwd)
+                self.syncActiveWorktreePaths()
                 self.cycleWorktree(direction, viewModel: viewModel)
             }
         }

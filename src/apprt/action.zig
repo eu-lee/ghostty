@@ -117,6 +117,9 @@ pub const Action = union(Key) {
     /// Toggle the worktree sidebar.
     toggle_worktree_sidebar,
 
+    /// Show the worktree picker.
+    worktree_picker,
+
     /// Toggle the command palette.
     toggle_command_palette,
 
@@ -367,6 +370,7 @@ pub const Action = union(Key) {
         toggle_window_decorations,
         toggle_quick_terminal,
         toggle_worktree_sidebar,
+        worktree_picker,
         toggle_command_palette,
         toggle_visibility,
         toggle_background_opacity,

@@ -10,8 +10,20 @@ extension TerminalController {
     private func ensureWorktreeWorkspaces() -> WorktreeWorkspaceManager {
         if let worktreeWorkspaces { return worktreeWorkspaces }
         let manager = WorktreeWorkspaceManager()
+        manager.onActiveWorktreesChanged = { [weak self] paths in
+            self?.syncActiveWorktreePaths(paths)
+        }
         worktreeWorkspaces = manager
         return manager
+    }
+
+    func syncActiveWorktreePaths(_ paths: Set<URL>? = nil) {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+        var active = paths ?? worktreeWorkspaces?.activeWorktreePaths ?? []
+        if active.isEmpty, let selected = viewModel.selectedWorktree {
+            active.insert(WorktreeWorkspaceManager.key(selected.path))
+        }
+        viewModel.setActiveWorktreePaths(active)
     }
 
     /// True when any surface in this window — the attached tree or a detached
@@ -46,6 +58,7 @@ extension TerminalController {
             // binding is adopted and the highlight agrees.
             manager.activePath = targetKey
             viewModel.selectedWorktree = worktree
+            syncActiveWorktreePaths()
             return
         }
 
@@ -85,6 +98,7 @@ extension TerminalController {
 
         manager.activePath = targetKey
         viewModel.selectedWorktree = worktree
+        syncActiveWorktreePaths()
 
         if let focusTarget {
             focusedSurface = focusTarget
@@ -94,12 +108,14 @@ extension TerminalController {
         }
     }
 
-    /// Cycle to the next/previous worktree in sidebar order, wrapping.
+    /// Cycle to the next/previous active worktree in sidebar order, wrapping.
     /// Backs the `goto_worktree` keybind (see `gotoWorktree`).
     func cycleWorktree(_ direction: Ghostty.WorktreeFocusDirection, viewModel: WorktreeSidebarViewModel) {
         let current = worktreeWorkspaces?.activePath ?? viewModel.selectedWorktree?.path
+        syncActiveWorktreePaths()
         let target = WorktreeSidebar.cycleTarget(
             in: viewModel.worktrees,
+            activeWorktreePaths: viewModel.activeWorktreePaths,
             from: current,
             offset: direction == .next ? 1 : -1)
         guard let target else { return }
@@ -126,6 +142,7 @@ extension TerminalController {
             viewModel.selectedWorktree = viewModel.worktrees
                 .first { WorktreeWorkspaceManager.key($0.path) == key }
         }
+        syncActiveWorktreePaths()
 
         if let focusTarget = workspace.lastFocusedSurface ?? workspace.tree.root?.leftmostLeaf() {
             focusedSurface = focusTarget

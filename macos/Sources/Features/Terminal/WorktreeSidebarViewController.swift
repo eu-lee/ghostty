@@ -357,13 +357,22 @@ private struct WorktreeSidebarList: View {
         viewModel.clearCreateError()
     }
 
+    /// Filtered rows with live (active) worktrees grouped above inactive ones,
+    /// preserving the pinned-main order within each group.
+    private var orderedWorktrees: [Worktree] {
+        WorktreeSidebar.activeFirst(
+            viewModel.filteredWorktrees,
+            activeWorktreePaths: viewModel.activeWorktreePaths)
+    }
+
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(viewModel.filteredWorktrees, id: \.path) { worktree in
+                ForEach(orderedWorktrees, id: \.path) { worktree in
                     WorktreeSidebarRowView(
                         worktree: worktree,
-                        isActive: worktree.path == viewModel.selectedWorktree?.path,
+                        isActive: viewModel.isLive(worktree),
+                        isSelected: worktree.path == viewModel.selectedWorktree?.path,
                         foregroundColor: foregroundColor,
                         secondaryColor: secondaryColor,
                         terminalFont: terminalFont
@@ -382,7 +391,10 @@ private struct WorktreeSidebarList: View {
 
 private struct WorktreeSidebarRowView: View {
     let worktree: Worktree
+    /// Has a live workspace (session) in this window.
     let isActive: Bool
+    /// Is the currently switched-to worktree (the `*` row).
+    let isSelected: Bool
     let foregroundColor: Color
     let secondaryColor: Color
     let terminalFont: Font
@@ -393,7 +405,9 @@ private struct WorktreeSidebarRowView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(isActive ? "*" : " ")
+            // `*` marks the currently switched-to worktree, like the current
+            // branch in `git branch` output.
+            Text(isSelected ? "*" : " ")
                 .foregroundStyle(foregroundColor)
                 .frame(width: 12, alignment: .leading)
             Text(title)
@@ -402,14 +416,16 @@ private struct WorktreeSidebarRowView: View {
                 .truncationMode(.middle)
                 .lineLimit(1)
                 .fontWeight(worktree.isMain ? .semibold : .regular)
-                .foregroundStyle(worktree.isDetached ? secondaryColor : foregroundColor)
+                // Live worktrees read at full strength; inactive (and detached)
+                // ones dim, so the active group stands out from the rest.
+                .foregroundStyle((isActive && !worktree.isDetached) ? foregroundColor : secondaryColor)
             Spacer(minLength: 0)
         }
         .font(terminalFont)
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isActive ? foregroundColor.opacity(0.15) : Color.clear)
+        .background(isSelected ? foregroundColor.opacity(0.15) : Color.clear)
         .help(title)
     }
 }
@@ -447,7 +463,12 @@ extension TerminalController {
     /// open (see `toggleWorktreeSidebar` / `windowDidBecomeKey`).
     // worktree-sidebar:
     func refreshWorktreeSidebar() {
-        worktreeSidebarViewController?.refresh(cwd: worktreeSidebarCwd)
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+        let cwd = worktreeSidebarCwd
+        Task { @MainActor in
+            await viewModel.refresh(cwd: cwd)
+            self.syncActiveWorktreePaths()
+        }
     }
 
     /// Semantic entry point for toggling the sidebar. This no-arg signature is kept
@@ -470,5 +491,30 @@ extension TerminalController {
 
     @IBAction func toggleWorktreeSidebar(_ sender: Any?) {
         toggleWorktreeSidebar()
+    }
+
+    func showWorktreePicker() {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        let present = {
+            self.syncActiveWorktreePaths()
+            self.commandPaletteIsShowing = false
+            self.worktreePickerIsShowing = true
+            _ = self.focusedSurface?.resignFirstResponder()
+        }
+
+        if viewModel.hasLoaded {
+            present()
+        } else {
+            let cwd = worktreeSidebarCwd
+            Task { @MainActor in
+                await viewModel.refresh(cwd: cwd)
+                present()
+            }
+        }
+    }
+
+    @IBAction func showWorktreePicker(_ sender: Any?) {
+        showWorktreePicker()
     }
 }

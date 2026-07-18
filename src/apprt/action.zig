@@ -120,6 +120,9 @@ pub const Action = union(Key) {
     /// Show the worktree picker.
     worktree_picker,
 
+    /// Create a new worktree.
+    new_worktree,
+
     /// Toggle the command palette.
     toggle_command_palette,
 
@@ -371,6 +374,7 @@ pub const Action = union(Key) {
         toggle_quick_terminal,
         toggle_worktree_sidebar,
         worktree_picker,
+        new_worktree,
         toggle_command_palette,
         toggle_visibility,
         toggle_background_opacity,

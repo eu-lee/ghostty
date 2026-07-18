@@ -605,6 +605,7 @@ extension TerminalController {
         let present = {
             self.syncActiveWorktreePaths()
             self.commandPaletteIsShowing = false
+            self.newWorktreeIsShowing = false
             self.worktreePickerIsShowing = true
             _ = self.focusedSurface?.resignFirstResponder()
         }
@@ -622,5 +623,31 @@ extension TerminalController {
 
     @IBAction func showWorktreePicker(_ sender: Any?) {
         showWorktreePicker()
+    }
+
+    func showNewWorktree() {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        let present = {
+            self.syncActiveWorktreePaths()
+            self.commandPaletteIsShowing = false
+            self.worktreePickerIsShowing = false
+            self.newWorktreeIsShowing = true
+            _ = self.focusedSurface?.resignFirstResponder()
+        }
+
+        if viewModel.hasLoaded {
+            present()
+        } else {
+            let cwd = worktreeSidebarCwd
+            Task { @MainActor in
+                await viewModel.refresh(cwd: cwd)
+                present()
+            }
+        }
+    }
+
+    @IBAction func showNewWorktree(_ sender: Any?) {
+        showNewWorktree()
     }
 }

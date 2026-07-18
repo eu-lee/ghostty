@@ -5382,6 +5382,12 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
             {},
         ),
 
+        .new_worktree => return try self.rt_app.performAction(
+            .{ .surface = self },
+            .new_worktree,
+            {},
+        ),
+
         .toggle_readonly => {
             self.readonly = !self.readonly;
             _ = try self.rt_app.performAction(

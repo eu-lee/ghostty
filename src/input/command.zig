@@ -714,6 +714,7 @@ fn actionCommands(action: Action.Key) []const Command {
         .toggle_command_palette,
         .toggle_worktree_sidebar,
         .worktree_picker,
+        .new_worktree,
         .toggle_quick_terminal,
         .toggle_visibility,
         .previous_tab,

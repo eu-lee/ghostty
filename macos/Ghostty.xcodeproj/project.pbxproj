@@ -154,6 +154,7 @@
 				Features/ClipboardConfirmation/ClipboardConfirmationView.swift,
 				"Features/Command Palette/CommandPalette.swift",
 				"Features/Command Palette/TerminalCommandPalette.swift",
+				"Features/Command Palette/TerminalNewWorktree.swift",
 				"Features/Custom App Icon/AppIcon.swift",
 				"Features/Custom App Icon/ColorizedGhosttyIcon.swift",
 				"Features/Custom App Icon/ColorizedGhosttyIconImage.swift",

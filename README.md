@@ -118,10 +118,37 @@ There's no auto-update, so re-run the build after you pull. The full, notarized
 distribution path and needs an Apple Developer account — out of scope for this
 fork.
 
-> **Note on identity.** Wtty ships under its own bundle id (`com.eulee.wtty`)
-> and name, but keeps the `ghostty` executable name so the CLI and config
-> (`~/.config/ghostty`) are unchanged. It has no icon of its own yet, so it uses
-> the system's generic app icon as a placeholder.
+> **Note on identity.** Wtty ships under its own bundle id (`com.eulee.wtty`),
+> name, and app icon, but keeps the `ghostty` executable name so the CLI and
+> config (`~/.config/ghostty`) are unchanged.
+
+### Replacing the app icon
+
+Upstream Ghostty has no static icon asset — it composites its Dock icon at
+runtime from layered images. Wtty disables that and ships a plain static icon
+instead:
+
+| What | Where |
+| --- | --- |
+| App icon (Dock, Finder) | `macos/Assets.xcassets/AppIcon.appiconset/` |
+| Flat image (About window, Settings) | `macos/Assets.xcassets/AppIconImage.imageset/` |
+
+To swap it, regenerate both from a single 1024×1024 PNG:
+
+```sh
+SRC=path/to/icon.png
+SET=macos/Assets.xcassets/AppIcon.appiconset
+for s in 16 32 64 128 256 512 1024; do
+  sips -z $s $s "$SRC" --out "$SET/icon_$s.png"
+done
+IMG=macos/Assets.xcassets/AppIconImage.imageset
+sips -z 256 256 "$SRC" --out "$IMG/macOS-AppIcon-256px-128pt@2x.png"
+sips -z 512 512 "$SRC" --out "$IMG/macOS-AppIcon-512px.png"
+cp "$SRC" "$IMG/macOS-AppIcon-1024px.png"
+```
+
+macOS renders macOS app icons as-authored (it doesn't apply its own mask), so
+draw the rounded corners and shadow into the artwork itself.
 
 ## Upstream
 

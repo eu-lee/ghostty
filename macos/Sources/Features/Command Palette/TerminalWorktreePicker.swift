@@ -24,7 +24,8 @@ struct TerminalWorktreePickerView: View {
                             selectsFirstOption: true,
                             options: worktreeOptions + branchOptions,
                             trailingOption: createBranchOption(query:),
-                            errorMessage: viewModel.createError
+                            errorMessage: viewModel.createError,
+                            maxWidth: paletteWidth(for: geometry.size.width)
                         )
                         .zIndex(1)
 
@@ -43,6 +44,14 @@ struct TerminalWorktreePickerView: View {
                 }
             }
         }
+    }
+
+    /// Palette width scaled to the terminal, echoing Spotlight's proportions:
+    /// a comfortable fraction of the window that grows and shrinks with it, but
+    /// clamped so it never gets cramped on a small window or absurdly wide on a
+    /// large one.
+    private func paletteWidth(for containerWidth: CGFloat) -> CGFloat {
+        min(max(containerWidth * 0.6, 480), 760)
     }
 
     private var worktreeOptions: [CommandOption] {

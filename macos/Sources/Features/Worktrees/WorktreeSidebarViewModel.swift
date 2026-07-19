@@ -23,9 +23,6 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// Local branches that do not currently have a linked worktree.
     @Published private(set) var branchesWithoutWorktree: [String] = []
 
-    /// Case-insensitive substring filter applied over branch + directory names.
-    @Published var filterText: String = ""
-
     /// The active/selected worktree. Initialized on each refresh to the
     /// worktree containing the source cwd (the "active" one, highlighted in the
     /// list). Exposed as settable observable state so the M3 switching layer
@@ -73,7 +70,10 @@ final class WorktreeSidebarViewModel: ObservableObject {
     var onDelete: ((Worktree) -> Void)?
 
     private let model: GitWorktreeModel
-    private(set) var currentCwd: URL?
+
+    /// The working directory the sidebar was last refreshed against — i.e. the
+    /// pwd of the surface it was activated from. Shown in the sidebar header.
+    @Published private(set) var currentCwd: URL?
 
     init(model: GitWorktreeModel = GitWorktreeModel()) {
         self.model = model
@@ -84,11 +84,6 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// repository" empty state.
     var isEmptyState: Bool {
         hasLoaded && worktrees.isEmpty
-    }
-
-    /// The worktrees to display, after applying `filterText`.
-    var filteredWorktrees: [Worktree] {
-        WorktreeSidebar.filter(worktrees, query: filterText)
     }
 
     /// Default base ref for creating a new worktree. v1 uses the currently
@@ -352,19 +347,7 @@ enum WorktreeSidebar {
             .max { canonicalPath($0.path).count < canonicalPath($1.path).count }
     }
 
-    /// Case-insensitive substring filter over branch + directory names. An
-    /// empty/whitespace query returns the input unchanged.
-    static func filter(_ worktrees: [Worktree], query: String) -> [Worktree] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return worktrees }
-
-        return worktrees.filter { worktree in
-            let haystacks = [displayName(for: worktree), worktree.path.lastPathComponent]
-            return haystacks.contains { $0.range(of: trimmed, options: .caseInsensitive) != nil }
-        }
-    }
-
-    /// Filtered worktrees with live workspaces first, preserving the input
+    /// Worktrees with live workspaces first, preserving the input
     /// order within active and inactive groups.
     static func activeFirst(_ worktrees: [Worktree], activeWorktreePaths: Set<URL>) -> [Worktree] {
         let keyed = worktrees.map { (worktree: $0, isActive: activeWorktreePaths.contains(WorktreeWorkspaceManager.key($0.path))) }

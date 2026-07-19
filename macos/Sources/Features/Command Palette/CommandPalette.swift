@@ -81,6 +81,9 @@ struct CommandPaletteView: View {
     var options: [CommandOption]
     var trailingOption: ((String) -> CommandOption?)?
     var errorMessage: String?
+    /// Maximum width of the palette card. Callers can widen it (e.g. the
+    /// worktree palette scales this with the terminal width, Spotlight-style).
+    var maxWidth: CGFloat = 500
     @State private var rawQuery = ""
     @State private var selectedIndex: UInt?
     @State private var hoveredOptionID: UUID?
@@ -199,7 +202,7 @@ struct CommandPaletteView: View {
                     .padding(.vertical, 10)
             }
         }
-        .frame(maxWidth: 500)
+        .frame(maxWidth: maxWidth)
         .background(
             ZStack {
                 Rectangle()

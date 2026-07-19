@@ -93,21 +93,6 @@ struct WorktreeSidebarViewModelTests {
         #expect(viewModel.isEmptyState == true)
     }
 
-    @Test func filterNarrowsThroughViewModel() async {
-        let viewModel = WorktreeSidebarViewModel(model: repoModel())
-        await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/main"))
-
-        viewModel.filterText = "feat"
-        #expect(viewModel.filteredWorktrees.map { $0.path.lastPathComponent } == ["feature"])
-
-        // Case-insensitive, and matches directory names too.
-        viewModel.filterText = "DETACHED"
-        #expect(viewModel.filteredWorktrees.map { $0.path.lastPathComponent } == ["detached-head"])
-
-        viewModel.filterText = ""
-        #expect(viewModel.filteredWorktrees.count == 3)
-    }
-
     @Test func activeWorktreePathsUseCanonicalKeys() async {
         let viewModel = WorktreeSidebarViewModel(model: repoModel())
         await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/main"))
@@ -156,19 +141,6 @@ struct WorktreeSidebarViewModelTests {
         #expect(WorktreeSidebar.activeWorktree(in: worktrees, cwd: nil) == nil)
         // A sibling that merely shares a name prefix must not match ("/repofoo").
         #expect(WorktreeSidebar.activeWorktree(in: worktrees, cwd: URL(fileURLWithPath: "/repofoo")) == nil)
-    }
-
-    @Test func filterMatchesBranchAndDirectoryCaseInsensitively() {
-        let worktrees = [
-            Worktree(path: URL(fileURLWithPath: "/w/main"), branch: "main", isMain: true, isDetached: false),
-            Worktree(path: URL(fileURLWithPath: "/w/review-notes"), branch: "review/design", isMain: false, isDetached: false),
-        ]
-
-        #expect(WorktreeSidebar.filter(worktrees, query: "MAIN").map(\.branch) == ["main"])
-        #expect(WorktreeSidebar.filter(worktrees, query: "design").map(\.branch) == ["review/design"])
-        #expect(WorktreeSidebar.filter(worktrees, query: "notes").map(\.branch) == ["review/design"])
-        #expect(WorktreeSidebar.filter(worktrees, query: "   ").count == 2)
-        #expect(WorktreeSidebar.filter(worktrees, query: "zzz").isEmpty)
     }
 
     @Test func canRemoveRefusesMainOnly() {

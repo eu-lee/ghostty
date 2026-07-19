@@ -50,11 +50,19 @@ final class WorktreeSidebarViewController: NSSplitViewController {
         super.viewDidLoad()
 
         let sidebarViewController = WorktreeSidebarListViewController(ghostty: ghostty, viewModel: viewModel)
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
+        // A plain split item, not `sidebarWithViewController:`. The system
+        // sidebar behavior wraps the pane in translucent vibrancy with an inset,
+        // rounded ("squircle") background; we want a flush, opaque pane that
+        // reads like a terminal split, drawn with the terminal background color.
+        let sidebarItem = NSSplitViewItem(viewController: sidebarViewController)
         sidebarItem.canCollapse = true
         sidebarItem.isCollapsed = Self.sessionIsCollapsed
         sidebarItem.minimumThickness = 240
         sidebarItem.maximumThickness = 420
+        // Keep the terminal pane as the one that flexes on window resize, so the
+        // sidebar holds the width the user set (the sidebar behavior did this
+        // for us; a plain item needs it spelled out).
+        sidebarItem.holdingPriority = .defaultLow + 1
 
         let terminalViewController = NSViewController()
         terminalViewController.view = terminalViewContainer
@@ -207,7 +215,7 @@ private struct WorktreeSidebarList: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            filterField
+            header
 
             if viewModel.isEmptyState {
                 emptyState
@@ -222,18 +230,25 @@ private struct WorktreeSidebarList: View {
         .background(backgroundColor)
     }
 
-    private var filterField: some View {
+    private var header: some View {
         HStack(spacing: 6) {
-            Text(">")
+            Text(headerText)
                 .foregroundStyle(secondaryColor)
-            TextField("Filter", text: $viewModel.filterText)
-                .textFieldStyle(.plain)
-                .font(terminalFont)
-                .foregroundStyle(foregroundColor)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(headerText)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(backgroundColor)
+    }
+
+    /// The working directory the sidebar was activated from, home-abbreviated,
+    /// e.g. `cur: ~/Code/ghostty`.
+    private var headerText: String {
+        guard let cwd = viewModel.currentCwd else { return "cur: —" }
+        return "cur: \((cwd.path as NSString).abbreviatingWithTildeInPath)"
     }
 
     private var emptyState: some View {
@@ -252,7 +267,7 @@ private struct WorktreeSidebarList: View {
     /// preserving the pinned-main order within each group.
     private var orderedWorktrees: [Worktree] {
         WorktreeSidebar.activeFirst(
-            viewModel.filteredWorktrees,
+            viewModel.worktrees,
             activeWorktreePaths: viewModel.activeWorktreePaths)
     }
 

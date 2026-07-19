@@ -157,19 +157,21 @@ struct WorktreeSidebarViewModelTests {
         #expect(WorktreeSidebar.canForceRemove(afterGitMessage: "invalid path") == false)
     }
 
-    @Test func activeFirstPreservesOrderWithinGroups() {
+    @Test func activeFirstPinsMainThenOrdersRestActiveFirst() {
         let worktrees = [
             Worktree(path: URL(fileURLWithPath: "/repo/main"), branch: "main", isMain: true, isDetached: false),
             Worktree(path: URL(fileURLWithPath: "/repo/feature"), branch: "feature", isMain: false, isDetached: false),
             Worktree(path: URL(fileURLWithPath: "/repo/review"), branch: "review", isMain: false, isDetached: false),
+            Worktree(path: URL(fileURLWithPath: "/repo/spike"), branch: "spike", isMain: false, isDetached: false),
         ]
+        // main is inactive, review is active, feature/spike inactive. main still
+        // pins to the top; among the rest, active comes before inactive.
         let active = Set([
-            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/feature")),
             WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/review")),
         ])
 
         #expect(WorktreeSidebar.activeFirst(worktrees, activeWorktreePaths: active).map(\.branch) == [
-            "feature", "review", "main",
+            "main", "review", "feature", "spike",
         ])
     }
 

@@ -18,6 +18,10 @@ func worktrees(forCwd cwd: URL) async -> [Worktree] {
     await GitWorktreeModel().worktrees(forCwd: cwd)
 }
 
+func localBranches(forCwd cwd: URL) async -> [String] {
+    await GitWorktreeModel().localBranches(forCwd: cwd)
+}
+
 /// Why `git worktree add` failed, carrying what the sidebar needs to render
 /// an unobtrusive error message (never an alert — see M4 guide).
 enum WorktreeCreateError: Error, Equatable {
@@ -86,6 +90,41 @@ struct GitWorktreeModel {
         if let base {
             arguments.append(base)
         }
+
+        let result = await runner.runGit(
+            arguments: arguments,
+            cwd: root,
+            timeout: createTimeout
+        )
+
+        switch result {
+        case .success:
+            return .success(destination)
+        case .failure(_, let stderr):
+            logFailure(result, command: "worktree add", cwd: root)
+            return .failure(.git(stderr))
+        case .timedOut:
+            logFailure(result, command: "worktree add", cwd: root)
+            return .failure(.timedOut)
+        case .launchFailed(let message):
+            logFailure(result, command: "worktree add", cwd: root)
+            return .failure(.launchFailed(message))
+        }
+    }
+
+    /// Add a linked worktree for an already-existing local branch. Unlike
+    /// `createWorktree`, this intentionally does not pass `-b` or a start
+    /// point; git checks out the branch as-is.
+    func addWorktree(
+        forExistingBranch branch: String,
+        forCwd cwd: URL
+    ) async -> Result<URL, WorktreeCreateError> {
+        guard let root = await repoRoot(forCwd: cwd) else {
+            return .failure(.notARepository)
+        }
+
+        let destination = WorktreeSidebar.newWorktreePath(repoRoot: root, branch: branch)
+        let arguments = ["worktree", "add", destination.path, branch]
 
         let result = await runner.runGit(
             arguments: arguments,
@@ -182,6 +221,23 @@ struct GitWorktreeModel {
         }
 
         return WorktreePorcelainParser.parse(output, mainRoot: root)
+    }
+
+    func localBranches(forCwd cwd: URL) async -> [String] {
+        guard let root = await repoRoot(forCwd: cwd) else { return [] }
+
+        let result = await runner.runGit(
+            arguments: ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+            cwd: root,
+            timeout: timeout
+        )
+
+        guard case .success(let output) = result else {
+            logFailure(result, command: "for-each-ref refs/heads", cwd: root)
+            return []
+        }
+
+        return output.lines
     }
 
     private func logFailure(_ result: GitCommandResult, command: String, cwd: URL) {

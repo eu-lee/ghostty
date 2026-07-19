@@ -126,9 +126,6 @@ pub const Action = union(Key) {
     /// Remove the current worktree.
     remove_worktree,
 
-    /// Create a new worktree.
-    new_worktree,
-
     /// Toggle the command palette.
     toggle_command_palette,
 
@@ -382,7 +379,6 @@ pub const Action = union(Key) {
         worktree_picker,
         close_worktree_session,
         remove_worktree,
-        new_worktree,
         toggle_command_palette,
         toggle_visibility,
         toggle_background_opacity,

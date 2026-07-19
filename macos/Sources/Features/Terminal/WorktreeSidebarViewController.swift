@@ -188,16 +188,6 @@ private struct WorktreeSidebarList: View {
     @ObservedObject var ghostty: Ghostty.App
     @ObservedObject var viewModel: WorktreeSidebarViewModel
 
-    @State private var isNamingNewWorktree = false
-    @State private var newBranchName = ""
-    @State private var newBaseRef = ""
-    @FocusState private var newWorktreeFieldFocused: NewWorktreeField?
-
-    private enum NewWorktreeField: Hashable {
-        case branch
-        case base
-    }
-
     private var backgroundColor: Color {
         ghostty.config.backgroundColor
     }
@@ -224,7 +214,6 @@ private struct WorktreeSidebarList: View {
             } else {
                 list
                 removeErrorSection
-                newWorktreeSection
             }
         }
         .font(terminalFont)
@@ -257,105 +246,6 @@ private struct WorktreeSidebarList: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    /// "New worktree…" affordance pinned under the list (M4). Clicking it
-    /// swaps in inline branch-name and base-ref fields: Return creates the
-    /// worktree (`git worktree add`), Escape cancels. Failures render as a
-    /// small inline message here — never an alert (M4 guide).
-    private var newWorktreeSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Rectangle()
-                .fill(ghostty.config.splitDividerColor)
-                .frame(height: 1)
-                .padding(.horizontal, -10)
-                .padding(.bottom, 4)
-
-            if isNamingNewWorktree {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text("+")
-                            .foregroundStyle(secondaryColor)
-                        TextField("Branch name", text: $newBranchName)
-                            .textFieldStyle(.plain)
-                            .font(terminalFont)
-                            .foregroundStyle(foregroundColor)
-                            .disabled(viewModel.isCreatingWorktree)
-                            .focused($newWorktreeFieldFocused, equals: .branch)
-                            .onAppear { newWorktreeFieldFocused = .branch }
-                            .onSubmit(submitNewWorktree)
-                            .onExitCommand(perform: cancelNewWorktree)
-                        if viewModel.isCreatingWorktree {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-
-                    HStack(spacing: 6) {
-                        Text("from")
-                            .foregroundStyle(secondaryColor)
-                            .frame(width: 28, alignment: .trailing)
-                        TextField(viewModel.defaultBaseBranch ?? "main HEAD", text: $newBaseRef)
-                            .textFieldStyle(.plain)
-                            .font(terminalFont)
-                            .foregroundStyle(foregroundColor)
-                            .disabled(viewModel.isCreatingWorktree)
-                            .focused($newWorktreeFieldFocused, equals: .base)
-                            .onSubmit(submitNewWorktree)
-                            .onExitCommand(perform: cancelNewWorktree)
-                    }
-                }
-            } else {
-                Button {
-                    newBranchName = ""
-                    newBaseRef = ""
-                    isNamingNewWorktree = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Text("+")
-                        Text("New worktree…")
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(secondaryColor)
-            }
-
-            if let error = viewModel.createError {
-                Text(error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.red)
-                    .lineLimit(3)
-                    .help(error)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(backgroundColor)
-    }
-
-    private func submitNewWorktree() {
-        let branch = newBranchName
-        let base = newBaseRef
-        Task {
-            await viewModel.createWorktree(branch: branch, base: base)
-
-            // Keep the field (and its text) around on failure so the name can
-            // or base can be corrected next to the error message.
-            if viewModel.createError == nil {
-                isNamingNewWorktree = false
-                newBranchName = ""
-                newBaseRef = ""
-            }
-        }
-    }
-
-    private func cancelNewWorktree() {
-        isNamingNewWorktree = false
-        newBranchName = ""
-        newBaseRef = ""
-        viewModel.clearCreateError()
     }
 
     /// Filtered rows with live (active) worktrees grouped above inactive ones,
@@ -605,7 +495,6 @@ extension TerminalController {
         let present = {
             self.syncActiveWorktreePaths()
             self.commandPaletteIsShowing = false
-            self.newWorktreeIsShowing = false
             self.worktreePickerIsShowing = true
             _ = self.focusedSurface?.resignFirstResponder()
         }
@@ -623,31 +512,5 @@ extension TerminalController {
 
     @IBAction func showWorktreePicker(_ sender: Any?) {
         showWorktreePicker()
-    }
-
-    func showNewWorktree() {
-        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
-
-        let present = {
-            self.syncActiveWorktreePaths()
-            self.commandPaletteIsShowing = false
-            self.worktreePickerIsShowing = false
-            self.newWorktreeIsShowing = true
-            _ = self.focusedSurface?.resignFirstResponder()
-        }
-
-        if viewModel.hasLoaded {
-            present()
-        } else {
-            let cwd = worktreeSidebarCwd
-            Task { @MainActor in
-                await viewModel.refresh(cwd: cwd)
-                present()
-            }
-        }
-    }
-
-    @IBAction func showNewWorktree(_ sender: Any?) {
-        showNewWorktree()
     }
 }

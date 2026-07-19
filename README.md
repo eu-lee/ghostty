@@ -56,23 +56,21 @@ shows a bell indicator on its row.
 ### Keybinds
 
 All bindings below are macOS-only; the actions are no-ops elsewhere. Defaults
-are compiled into this fork's build (see `src/config/Config.zig`); the picker
-and cycle actions ship unbound so you can bind them yourself.
+are compiled into this fork's build (see `src/config/Config.zig`); the cycle
+actions ship unbound so you can bind them yourself.
 
 | Action | Default macOS bind | What it does |
 | --- | --- | --- |
 | `toggle_worktree_sidebar` | `cmd+shift+e` | Show or hide the worktree sidebar. |
-| `worktree_picker` | _(unbound)_ | Open the fuzzy worktree picker overlay. |
+| `worktree_picker` | `cmd+opt+n` | Open the unified worktree palette. |
 | `goto_worktree:next` | _(unbound)_ | Switch to the next active worktree. |
 | `goto_worktree:previous` | _(unbound)_ | Switch to the previous active worktree. |
-| `new_worktree` | `cmd+opt+n` | Open the create-worktree popup. |
 | `close_worktree_session` | `cmd+opt+c` | Tear down the selected worktree's live session, leaving the worktree on disk. |
 | `remove_worktree` | `cmd+opt+backspace` | `git worktree remove` the selected worktree (branch left intact). |
 
 To bind the unbound actions, add them to your Ghostty config, e.g.:
 
 ```ini
-keybind = cmd+alt+p=worktree_picker
 keybind = cmd+alt+right_bracket=goto_worktree:next
 keybind = cmd+alt+left_bracket=goto_worktree:previous
 ```
@@ -80,20 +78,18 @@ keybind = cmd+alt+left_bracket=goto_worktree:previous
 ### Using it
 
 - **Open the sidebar** with `cmd+shift+e` or View → Worktree Sidebar.
-- **Switch** by clicking a row, by cycling active worktrees with
-  `goto_worktree:next` / `goto_worktree:previous`, or by opening the
-  `worktree_picker` overlay (also reachable via View → Go to Worktree…). The
-  picker searches all worktrees and opens an inactive one only when you choose
-  it.
-- **Create a worktree** with `new_worktree` (`cmd+opt+n`), which opens a
-  centered search-style popup: type a branch name, optionally override the base
-  ref, and press Return. The base defaults to the currently selected worktree's
-  branch. The same flow is reachable via the inline "New worktree…" button at
-  the bottom of the sidebar. Ghostty runs
-  `git worktree add ../<repo>-worktrees/<branch> -b <branch> <base>`, using a
-  visible container directory next to the repository, one subdirectory per
-  branch (slashes in branch names become dashes). The new worktree opens
-  immediately; git errors show inline, never as alerts.
+- **Switch, open, or create** with `worktree_picker` (`cmd+opt+n`, also
+  reachable via View → Go to Worktree…). The palette searches live worktrees
+  under **Worktrees**; choosing one switches to it. It also lists local
+  branches with no worktree under **Branches**; choosing one runs
+  `git worktree add ../<repo>-worktrees/<branch> <branch>` and opens it. If
+  your query matches neither, the palette offers **Create branch '<query>'**,
+  which runs
+  `git worktree add ../<repo>-worktrees/<branch> -b <branch> <base>` using the
+  selected worktree's branch as the default base, or repository HEAD if no
+  worktree is selected. Worktrees use a visible container directory next to the
+  repository, one subdirectory per branch (slashes in branch names become
+  dashes). Git errors show inline in the palette, never as alerts.
 - **Close a session** with `close_worktree_session` (`cmd+opt+c`) or a row's
   right-click **Close Session** menu item. This drops the worktree's live
   workspace and returns the row to inactive; the worktree remains on disk, and

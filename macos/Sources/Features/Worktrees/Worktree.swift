@@ -220,7 +220,7 @@ struct GitWorktreeModel {
             return []
         }
 
-        return WorktreePorcelainParser.parse(output, mainRoot: root)
+        return WorktreePorcelainParser.parse(output)
     }
 
     func localBranches(forCwd cwd: URL) async -> [String] {
@@ -323,20 +323,23 @@ private func runGitSynchronously(arguments: [String], cwd: URL, timeout: TimeInt
 }
 
 private struct WorktreePorcelainParser {
-    static func parse(_ output: String, mainRoot: URL) -> [Worktree] {
+    static func parse(_ output: String) -> [Worktree] {
         let blocks = output
             .components(separatedBy: "\n\n")
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        let mainPath = normalizedPath(mainRoot)
 
-        let parsed = blocks.compactMap { block -> Worktree? in
-            parseBlock(block, mainPath: mainPath)
+        // `git worktree list --porcelain` always emits the main working tree as
+        // the first block. Identify main by that position rather than by
+        // path-matching a separately-resolved repo root: a relative
+        // `--git-common-dir` can make the match fail and flag no worktree as
+        // main, which silently breaks main-pinning, removal guarding, and the
+        // sidebar header.
+        return blocks.enumerated().compactMap { index, block -> Worktree? in
+            parseBlock(block, isMain: index == 0)
         }
-
-        return parsed.filter(\.isMain) + parsed.filter { !$0.isMain }
     }
 
-    private static func parseBlock(_ block: String, mainPath: String) -> Worktree? {
+    private static func parseBlock(_ block: String, isMain: Bool) -> Worktree? {
         var path: URL?
         var branch: String?
         var isDetached = false
@@ -360,7 +363,7 @@ private struct WorktreePorcelainParser {
         return Worktree(
             path: path,
             branch: branch,
-            isMain: normalizedPath(path) == mainPath,
+            isMain: isMain,
             isDetached: isDetached
         )
     }
@@ -369,10 +372,6 @@ private struct WorktreePorcelainParser {
         let prefix = "refs/heads/"
         guard ref.hasPrefix(prefix) else { return ref }
         return String(ref.dropFirst(prefix.count))
-    }
-
-    private static func normalizedPath(_ url: URL) -> String {
-        url.standardizedFileURL.path
     }
 }
 

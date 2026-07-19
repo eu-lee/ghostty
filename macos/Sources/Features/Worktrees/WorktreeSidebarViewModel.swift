@@ -72,8 +72,8 @@ final class WorktreeSidebarViewModel: ObservableObject {
     private let model: GitWorktreeModel
 
     /// The working directory the sidebar was last refreshed against — i.e. the
-    /// pwd of the surface it was activated from. Shown in the sidebar header.
-    @Published private(set) var currentCwd: URL?
+    /// pwd of the surface it was activated from. Drives create/open flows.
+    private(set) var currentCwd: URL?
 
     init(model: GitWorktreeModel = GitWorktreeModel()) {
         self.model = model

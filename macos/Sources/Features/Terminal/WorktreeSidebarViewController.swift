@@ -244,11 +244,13 @@ private struct WorktreeSidebarList: View {
         .background(backgroundColor)
     }
 
-    /// The working directory the sidebar was activated from, home-abbreviated,
-    /// e.g. `cur: ~/Code/ghostty`.
+    /// The directory of the main worktree — the repo root the worktrees link
+    /// to — home-abbreviated, e.g. `root: ~/Code/ghostty`. A stable anchor that
+    /// stays put across refreshes and worktree switches, unlike the terminal's
+    /// live pwd, which the terminal already shows.
     private var headerText: String {
-        guard let cwd = viewModel.currentCwd else { return "cur: —" }
-        return "cur: \((cwd.path as NSString).abbreviatingWithTildeInPath)"
+        guard let main = viewModel.worktrees.first(where: { $0.isMain }) else { return "root: —" }
+        return "root: \((main.path.path as NSString).abbreviatingWithTildeInPath)"
     }
 
     private var emptyState: some View {
@@ -505,6 +507,13 @@ extension TerminalController {
     }
 
     func showWorktreePicker() {
+        // Toggle: invoking the picker keybind again while it's open closes it
+        // (Esc also closes it, handled by the palette itself).
+        if worktreePickerIsShowing {
+            worktreePickerIsShowing = false
+            return
+        }
+
         guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
 
         let present = {

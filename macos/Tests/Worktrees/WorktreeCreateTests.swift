@@ -296,6 +296,7 @@ private final class FakeCreateRunner: GitCommandRunning {
     private let commonDir: String?
     private var porcelain: String?
     private let localBranches: String
+    private let remoteBranches: String
     private let addResult: GitCommandResult
     private let addedBlock: String?
     private(set) var addArguments: [String]?
@@ -304,12 +305,14 @@ private final class FakeCreateRunner: GitCommandRunning {
         commonDir: String?,
         porcelain: String?,
         localBranches: String = "main\n",
+        remoteBranches: String = "",
         addResult: GitCommandResult = .success(""),
         addedBlock: String? = nil
     ) {
         self.commonDir = commonDir
         self.porcelain = porcelain
         self.localBranches = localBranches
+        self.remoteBranches = remoteBranches
         self.addResult = addResult
         self.addedBlock = addedBlock
     }
@@ -331,7 +334,7 @@ private final class FakeCreateRunner: GitCommandRunning {
             return .success(porcelain)
         }
         if arguments.contains("for-each-ref") {
-            return .success(localBranches)
+            return .success(arguments.contains("refs/remotes") ? remoteBranches : localBranches)
         }
         return .failure(status: 1, stderr: "unexpected command \(arguments)")
     }

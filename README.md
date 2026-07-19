@@ -60,6 +60,13 @@ keybind = cmd+alt+left_bracket=goto_worktree:previous
   - **Worktrees** — live worktrees; choosing one switches to it.
   - **Branches** — local branches with no worktree; choosing one runs
     `git worktree add ../<repo>-worktrees/<branch> <branch>` and opens it.
+  - **Remote branches** — fetched remote branches with no local counterpart,
+    most recently committed first; choosing one runs
+    `git worktree add ../<repo>-worktrees/<branch> -b <branch> <remote>/<branch>`,
+    creating the local branch (tracking the remote) and its worktree in one
+    step. Only the 20 most recent are listed until you type; searching reaches
+    all of them. This section never fetches — it lists what your last `git
+    fetch` already brought down.
   - **Create branch '<query>'** — shown when your query matches nothing; runs
     `git worktree add ../<repo>-worktrees/<branch> -b <branch> <base>` using the
     selected worktree's branch as the default base (or repository HEAD if none
@@ -95,10 +102,16 @@ alone aren't enough for the macOS app).
 zig build
 ```
 
-Produces `macos/build/Debug/Wtty.app`. Add `-Demit-macos-app=false` to skip the
-app bundle when you only need the core to compile. The debug app uses a separate
-bundle id (`com.eulee.wtty.debug`), so it runs happily alongside a stable
-install.
+Produces `macos/build/Debug/Wtty.app`. Run the Swift tests with:
+
+```sh
+xcodebuild test -project macos/Ghostty.xcodeproj -scheme Ghostty \
+  -destination 'platform=macOS' -only-testing:GhosttyTests
+```
+
+Add `-Demit-macos-app=false` to `zig build` to skip the app bundle when you only
+need the core to compile. The debug app uses a separate bundle id
+(`com.eulee.wtty.debug`), so it runs happily alongside a stable install.
 
 ### A real build to install
 

@@ -517,6 +517,13 @@ extension TerminalController {
         guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
 
         let present = {
+            // Outside a git repository there is nothing to switch to and no
+            // base to branch from, so the palette would only offer a "Create
+            // branch…" row whose `git worktree add` is guaranteed to fail.
+            // Treat the keybind as a no-op instead. (A loaded repo always has
+            // at least its main worktree, so an empty list means "not a repo".)
+            guard !viewModel.isEmptyState else { return }
+
             self.syncActiveWorktreePaths()
             self.commandPaletteIsShowing = false
             self.worktreePickerIsShowing = true

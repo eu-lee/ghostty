@@ -1,3 +1,7 @@
+<!-- LOGO -->
+<p align="center">
+  <img src="macos/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="Wtty" width="128">
+</p>
 <h1 align="center">Wtty</h1>
 <p align="center">
   A worktree-focused, macOS-native fork of
@@ -98,14 +102,20 @@ install.
 
 ### A real build to install
 
-Use the **ReleaseLocal** configuration — optimized and ad-hoc code-signed, with
-no notarization or auto-update (the right trade-off for a personal fork):
+Build optimized — this emits the **ReleaseLocal** configuration, which is
+ad-hoc code-signed with no notarization or auto-update (the right trade-off for
+a personal fork):
 
 ```sh
-cd macos && ./build.nu --configuration ReleaseLocal
+zig build -Doptimize=ReleaseFast
 ```
 
-Produces `macos/build/ReleaseLocal/Wtty.app`; drag it into `/Applications`.
+Produces `macos/build/ReleaseLocal/Wtty.app`; copy it into `/Applications`
+(use `ditto` rather than `cp -R` so signing metadata is preserved):
+
+```sh
+ditto macos/build/ReleaseLocal/Wtty.app /Applications/Wtty.app
+```
 Because it isn't notarized, Gatekeeper will complain on first launch — either
 right-click → **Open** once, or clear the quarantine flag:
 

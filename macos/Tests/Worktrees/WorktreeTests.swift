@@ -28,12 +28,16 @@ struct WorktreeTests {
         let worktrees = await GitWorktreeModel().worktrees(forCwd: fixture.featureWorktree)
 
         #expect(worktrees.count == 3)
-        #expect(worktrees.map { $0.path.standardizedFileURL } == [
-            fixture.main.standardizedFileURL,
+
+        // git guarantees the main working tree comes first, but orders the
+        // linked worktrees by path rather than by creation — so only the head
+        // of the list is positional. `isMain` depends on exactly that
+        // guarantee (see WorktreePorcelainParser).
+        #expect(worktrees.first?.path.standardizedFileURL == fixture.main.standardizedFileURL)
+        #expect(Set(worktrees.dropFirst().map { $0.path.standardizedFileURL }) == [
             fixture.featureWorktree.standardizedFileURL,
             fixture.detachedWorktree.standardizedFileURL,
         ])
-        #expect(worktrees.first?.path.standardizedFileURL == fixture.main.standardizedFileURL)
         #expect(worktrees.first?.branch == "main")
         #expect(worktrees.first?.isMain == true)
         #expect(worktrees.first?.isDetached == false)

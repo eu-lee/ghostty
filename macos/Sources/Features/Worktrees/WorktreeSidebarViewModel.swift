@@ -23,6 +23,11 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// Local branches that do not currently have a linked worktree.
     @Published private(set) var branchesWithoutWorktree: [String] = []
 
+    /// The repository's common git directory, watched so the sidebar can
+    /// refresh when the repo changes from the terminal (see
+    /// `GitDirectoryWatcher`). Nil outside a repository.
+    @Published private(set) var gitCommonDir: URL?
+
     /// The active/selected worktree. Initialized on each refresh to the
     /// worktree containing the source cwd (the "active" one, highlighted in the
     /// list). Exposed as settable observable state so the M3 switching layer
@@ -118,6 +123,7 @@ final class WorktreeSidebarViewModel: ObservableObject {
         branchesWithoutWorktree = WorktreeSidebar.branchesWithoutWorktree(
             localBranches: localBranches,
             worktrees: loaded)
+        gitCommonDir = WorktreeSidebar.gitCommonDir(in: loaded)
         hasLoaded = true
 
         // Preserve an existing selection if it still exists after the refresh;
@@ -358,6 +364,22 @@ enum WorktreeSidebar {
         return main +
             rest.filter { $0.isActive }.map { $0.worktree } +
             rest.filter { !$0.isActive }.map { $0.worktree }
+    }
+
+    /// The repository's common git directory: the main worktree's `.git`.
+    ///
+    /// Derived from the already-loaded list rather than another `git rev-parse`
+    /// so a refresh costs no extra process. Only the *main* worktree has a real
+    /// `.git` directory — linked worktrees have a `.git` file pointing back
+    /// here — so this is the one path that sees every worktree's HEAD, every
+    /// branch ref, and the `worktrees/` registry.
+    static func gitCommonDir(in worktrees: [Worktree]) -> URL? {
+        guard let main = worktrees.first(where: { $0.isMain }) else { return nil }
+        let candidate = main.path.appendingPathComponent(".git")
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: candidate.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return candidate
     }
 
     static func branchesWithoutWorktree(localBranches: [String], worktrees: [Worktree]) -> [String] {

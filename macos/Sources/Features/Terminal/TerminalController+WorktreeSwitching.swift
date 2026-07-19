@@ -189,7 +189,10 @@ extension TerminalController {
     }
 
     func closeCurrentWorktreeSession() {
-        guard let controller = worktreeSidebarViewController, !controller.isSidebarCollapsed else { return }
+        // Act on the selected worktree regardless of whether the sidebar is
+        // showing — requiring it expanded made the keybind feel dead (see the
+        // nav actions, which have no such gate).
+        guard let controller = worktreeSidebarViewController else { return }
         guard let worktree = controller.viewModel.selectedWorktree else { return }
         deactivateWorktree(worktree)
     }
@@ -201,7 +204,10 @@ extension TerminalController {
     }
 
     func removeCurrentWorktree() {
-        guard let controller = worktreeSidebarViewController, !controller.isSidebarCollapsed else { return }
+        // As with close, don't gate on the sidebar being expanded. The removal
+        // confirmation dialog names the worktree, so this stays safe even when
+        // the sidebar is hidden.
+        guard let controller = worktreeSidebarViewController else { return }
         guard let worktree = controller.viewModel.selectedWorktree else { return }
         deleteWorktree(worktree)
     }

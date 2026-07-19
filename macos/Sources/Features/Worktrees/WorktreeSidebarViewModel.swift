@@ -347,12 +347,17 @@ enum WorktreeSidebar {
             .max { canonicalPath($0.path).count < canonicalPath($1.path).count }
     }
 
-    /// Worktrees with live workspaces first, preserving the input
-    /// order within active and inactive groups.
+    /// Main pinned to the very top, then live workspaces, then the rest —
+    /// preserving the input order within each group. Main stays anchored at the
+    /// top no matter which worktree is currently attached, so switching away
+    /// from it never shuffles it down the list.
     static func activeFirst(_ worktrees: [Worktree], activeWorktreePaths: Set<URL>) -> [Worktree] {
         let keyed = worktrees.map { (worktree: $0, isActive: activeWorktreePaths.contains(WorktreeWorkspaceManager.key($0.path))) }
-        return keyed.filter { $0.isActive }.map { $0.worktree } +
-            keyed.filter { !$0.isActive }.map { $0.worktree }
+        let main = keyed.filter { $0.worktree.isMain }.map { $0.worktree }
+        let rest = keyed.filter { !$0.worktree.isMain }
+        return main +
+            rest.filter { $0.isActive }.map { $0.worktree } +
+            rest.filter { !$0.isActive }.map { $0.worktree }
     }
 
     static func branchesWithoutWorktree(localBranches: [String], worktrees: [Worktree]) -> [String] {

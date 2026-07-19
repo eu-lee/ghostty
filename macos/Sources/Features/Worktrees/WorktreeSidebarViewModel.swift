@@ -23,6 +23,11 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// Local branches that do not currently have a linked worktree.
     @Published private(set) var branchesWithoutWorktree: [String] = []
 
+    /// Fetched remote branches that have no local counterpart yet, most
+    /// recently committed first. Opening one creates the local branch and its
+    /// worktree in a single `git worktree add`.
+    @Published private(set) var remoteBranchesWithoutLocal: [RemoteBranch] = []
+
     /// The repository's common git directory, watched so the sidebar can
     /// refresh when the repo changes from the terminal (see
     /// `GitDirectoryWatcher`). Nil outside a repository.
@@ -111,18 +116,24 @@ final class WorktreeSidebarViewModel: ObservableObject {
 
         let loaded: [Worktree]
         let localBranches: [String]
+        let remoteBranches: [RemoteBranch]
         if let cwd {
             loaded = await model.worktrees(forCwd: cwd)
             localBranches = await model.localBranches(forCwd: cwd)
+            remoteBranches = await model.remoteBranches(forCwd: cwd)
         } else {
             loaded = []
             localBranches = []
+            remoteBranches = []
         }
 
         worktrees = loaded
         branchesWithoutWorktree = WorktreeSidebar.branchesWithoutWorktree(
             localBranches: localBranches,
             worktrees: loaded)
+        remoteBranchesWithoutLocal = WorktreeSidebar.remoteBranchesWithoutLocal(
+            remoteBranches: remoteBranches,
+            localBranches: localBranches)
         gitCommonDir = WorktreeSidebar.gitCommonDir(in: loaded)
         hasLoaded = true
 
@@ -235,6 +246,15 @@ final class WorktreeSidebarViewModel: ObservableObject {
         case .failure(let error):
             createError = error.message
         }
+    }
+
+    /// Check out a fetched remote branch: create the local branch that tracks
+    /// it and its worktree in one `git worktree add -b <name> <remote>/<name>`,
+    /// then open it. A fetch only brings down objects and a read-only
+    /// `refs/remotes` mirror — this is the step that gives the branch a
+    /// writable local ref to commit onto.
+    func checkOutRemoteBranch(_ remote: RemoteBranch) async {
+        await createWorktree(branch: remote.name, base: remote.ref)
     }
 
     /// Clear a pending creation error after the palette is reopened.
@@ -386,6 +406,28 @@ enum WorktreeSidebar {
         let branchesWithWorktree = Set(worktrees.compactMap(\.branch))
         return localBranches.filter { !branchesWithWorktree.contains($0) }
     }
+
+    /// Remote branches worth offering: those with no local branch of the same
+    /// name. A remote whose local branch already exists is reachable through
+    /// the Worktrees or Branches sections instead, so listing it again would
+    /// only be a second route to the same checkout.
+    ///
+    /// Two remotes carrying the same branch name both stay in the list, each
+    /// under its own `<remote>/<name>` ref. Ordering is preserved, so a
+    /// recency-sorted input stays recency-sorted.
+    static func remoteBranchesWithoutLocal(
+        remoteBranches: [RemoteBranch],
+        localBranches: [String]
+    ) -> [RemoteBranch] {
+        let local = Set(localBranches)
+        return remoteBranches.filter { !local.contains($0.name) }
+    }
+
+    /// The slice of remote branches to show before the user has typed
+    /// anything. Repos routinely carry hundreds of remote branches, and an
+    /// unbounded list would bury the local sections under them; searching
+    /// still reaches every branch.
+    static let remoteBranchPreviewLimit = 20
 
     /// The worktree `offset` steps away from `current` in sidebar order,
     /// wrapping around either end, but only among worktrees that already have

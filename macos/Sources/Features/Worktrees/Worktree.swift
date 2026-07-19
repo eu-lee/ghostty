@@ -22,6 +22,46 @@ func localBranches(forCwd cwd: URL) async -> [String] {
     await GitWorktreeModel().localBranches(forCwd: cwd)
 }
 
+func remoteBranches(forCwd cwd: URL) async -> [RemoteBranch] {
+    await GitWorktreeModel().remoteBranches(forCwd: cwd)
+}
+
+/// A remote-tracking ref (`refs/remotes/<remote>/<name>`) that a fetch has
+/// already brought down.
+///
+/// These are read-only mirrors: git force-updates all of `refs/remotes/*` on
+/// every fetch, and HEAD can only advance a ref under `refs/heads/*`. So
+/// working on one means first creating a local branch that points at it —
+/// which is exactly what the palette does, via
+/// `git worktree add <dest> -b <name> <remote>/<name>`.
+struct RemoteBranch: Equatable {
+    /// The full short ref as git prints it (e.g. `origin/feat/x`). This is the
+    /// start point handed to `git worktree add`.
+    let ref: String
+
+    /// The remote this ref came from (e.g. `origin`).
+    let remote: String
+
+    /// The branch name with the remote stripped — the local branch to create.
+    let name: String
+
+    /// Parse a `%(refname:short)` remote ref. Returns nil for anything that
+    /// isn't a branch we can check out, notably `<remote>/HEAD` (a symbolic
+    /// alias for the remote's default branch, not a branch of its own).
+    init?(shortRef: String) {
+        let ref = shortRef.trimmingCharacters(in: .whitespaces)
+        guard let slash = ref.firstIndex(of: "/") else { return nil }
+
+        let remote = String(ref[ref.startIndex..<slash])
+        let name = String(ref[ref.index(after: slash)...])
+        guard !remote.isEmpty, !name.isEmpty, name != "HEAD" else { return nil }
+
+        self.ref = ref
+        self.remote = remote
+        self.name = name
+    }
+}
+
 /// Why `git worktree add` failed, carrying what the sidebar needs to render
 /// an unobtrusive error message (never an alert — see M4 guide).
 enum WorktreeCreateError: Error, Equatable {
@@ -238,6 +278,32 @@ struct GitWorktreeModel {
         }
 
         return output.lines
+    }
+
+    /// Every remote-tracking branch, most recently committed first. Repos with
+    /// hundreds of stale remote branches are common, and recency is the only
+    /// ordering that reliably floats the interesting ones to the top — the
+    /// palette shows a bounded slice of this list until the user types.
+    func remoteBranches(forCwd cwd: URL) async -> [RemoteBranch] {
+        guard let root = await repoRoot(forCwd: cwd) else { return [] }
+
+        let result = await runner.runGit(
+            arguments: [
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "--sort=-committerdate",
+                "refs/remotes",
+            ],
+            cwd: root,
+            timeout: timeout
+        )
+
+        guard case .success(let output) = result else {
+            logFailure(result, command: "for-each-ref refs/remotes", cwd: root)
+            return []
+        }
+
+        return output.lines.compactMap { RemoteBranch(shortRef: $0) }
     }
 
     private func logFailure(_ result: GitCommandResult, command: String, cwd: URL) {

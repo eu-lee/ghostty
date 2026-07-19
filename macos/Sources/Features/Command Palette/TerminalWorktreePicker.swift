@@ -7,6 +7,10 @@ struct TerminalWorktreePickerView: View {
     @ObservedObject var viewModel: WorktreeSidebarViewModel
     var onSelect: (Worktree) -> Void
 
+    /// Mirrors the palette's query so the remote-branch section can stay
+    /// bounded until the user starts searching (see `remoteOptions`).
+    @State private var query: String = ""
+
     var body: some View {
         ZStack {
             if isPresented {
@@ -22,8 +26,9 @@ struct TerminalWorktreePickerView: View {
                             backgroundColor: ghosttyConfig.backgroundColor,
                             placeholder: "Worktree or branch…",
                             selectsFirstOption: true,
-                            options: worktreeOptions + branchOptions,
+                            options: worktreeOptions + branchOptions + remoteOptions,
                             trailingOption: createBranchOption(query:),
+                            onQueryChange: { query = $0 },
                             errorMessage: viewModel.createError,
                             maxWidth: paletteWidth(for: geometry.size.width)
                         )
@@ -37,6 +42,7 @@ struct TerminalWorktreePickerView: View {
         }
         .onChange(of: isPresented) { newValue in
             if newValue {
+                query = ""
                 viewModel.clearCreateError()
             } else {
                 DispatchQueue.main.async {
@@ -97,6 +103,41 @@ struct TerminalWorktreePickerView: View {
         }
     }
 
+    /// Fetched remote branches with no local counterpart. Choosing one runs
+    /// `git worktree add <dest> -b <name> <remote>/<name>`, which is what turns
+    /// a read-only `refs/remotes` mirror into a branch you can commit on.
+    ///
+    /// With no query only the most recent few are offered, so a repo with
+    /// hundreds of remote branches doesn't bury the worktree and branch
+    /// sections above; typing searches the full list.
+    private var remoteOptions: [CommandOption] {
+        let branches = viewModel.remoteBranchesWithoutLocal
+        let visible = query.isEmpty
+            ? Array(branches.prefix(WorktreeSidebar.remoteBranchPreviewLimit))
+            : branches
+
+        return visible.map { remote in
+            CommandOption(
+                title: remote.name,
+                subtitle: viewModel.isCreatingWorktree
+                    ? "Checking out…"
+                    : "Check out \(remote.ref)",
+                description: remote.ref,
+                leadingIcon: "arrow.down.circle",
+                sectionTitle: "Remote branches",
+                isDimmed: true,
+                dismissOnSelect: false
+            ) {
+                Task { @MainActor in
+                    await viewModel.checkOutRemoteBranch(remote)
+                    if viewModel.createError == nil {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+    }
+
     private func createBranchOption(query: String) -> CommandOption? {
         let branch = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !branch.isEmpty else { return nil }
@@ -131,6 +172,7 @@ struct TerminalWorktreePickerView: View {
         let worktreeNames = viewModel.worktrees.flatMap { worktree in
             [WorktreeSidebar.displayName(for: worktree), worktree.branch].compactMap(\.self)
         }
-        return Set(worktreeNames + viewModel.branchesWithoutWorktree)
+        let remoteNames = viewModel.remoteBranchesWithoutLocal.map(\.name)
+        return Set(worktreeNames + viewModel.branchesWithoutWorktree + remoteNames)
     }
 }

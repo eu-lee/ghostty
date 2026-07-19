@@ -80,6 +80,10 @@ struct CommandPaletteView: View {
     var selectsFirstOption: Bool = false
     var options: [CommandOption]
     var trailingOption: ((String) -> CommandOption?)?
+    /// Called whenever the (trimmed) query changes. Lets a caller vary the
+    /// `options` it supplies with the query — e.g. showing only a bounded
+    /// preview of a very long section until the user starts typing.
+    var onQueryChange: ((String) -> Void)?
     var errorMessage: String?
     /// Maximum width of the palette card. Callers can widen it (e.g. the
     /// worktree palette scales this with the terminal width, Spotlight-style).
@@ -166,6 +170,8 @@ struct CommandPaletteView: View {
                 }
             }
             .onChange(of: query) { newValue in
+                onQueryChange?(newValue)
+
                 // If the user types a query then we want to make sure the first
                 // value is selected. If the user clears the query and we were selecting
                 // the first, we unset any selection.

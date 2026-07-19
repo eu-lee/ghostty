@@ -213,11 +213,18 @@ private struct FakeGitRunner: GitCommandRunning {
     let commonDir: String?
     let porcelain: String?
     let localBranches: String
+    let remoteBranches: String
 
-    init(commonDir: String?, porcelain: String?, localBranches: String = "") {
+    init(
+        commonDir: String?,
+        porcelain: String?,
+        localBranches: String = "",
+        remoteBranches: String = ""
+    ) {
         self.commonDir = commonDir
         self.porcelain = porcelain
         self.localBranches = localBranches
+        self.remoteBranches = remoteBranches
     }
 
     func runGit(arguments: [String], cwd: URL, timeout: TimeInterval) async -> GitCommandResult {
@@ -230,7 +237,7 @@ private struct FakeGitRunner: GitCommandRunning {
             return .success(porcelain)
         }
         if arguments.contains("for-each-ref") {
-            return .success(localBranches)
+            return .success(arguments.contains("refs/remotes") ? remoteBranches : localBranches)
         }
         return .failure(status: 1, stderr: "unexpected command \(arguments)")
     }

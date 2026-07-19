@@ -52,15 +52,25 @@ struct WorktreeTests {
         #expect(branches[fixture.detachedWorktree.lastPathComponent]?.isDetached == true)
     }
 
+    @Test func localBranchesEnumeratesRefsHeads() async throws {
+        let fixture = try GitWorktreeFixture()
+
+        let branches = await GitWorktreeModel().localBranches(forCwd: fixture.featureWorktree)
+
+        #expect(Set(branches) == Set(["main", "feature"]))
+    }
+
     @Test func gitFailureFailsSoft() async throws {
         let directory = try TemporaryDirectory()
         let model = GitWorktreeModel(runner: StubGitRunner(result: .failure(status: 128, stderr: "bad git")))
 
         let root = await model.repoRoot(forCwd: directory.url)
         let worktrees = await model.worktrees(forCwd: directory.url)
+        let branches = await model.localBranches(forCwd: directory.url)
 
         #expect(root == nil)
         #expect(worktrees.isEmpty)
+        #expect(branches.isEmpty)
     }
 
     @Test func gitTimeoutFailsSoft() async throws {
@@ -69,9 +79,11 @@ struct WorktreeTests {
 
         let root = await model.repoRoot(forCwd: directory.url)
         let worktrees = await model.worktrees(forCwd: directory.url)
+        let branches = await model.localBranches(forCwd: directory.url)
 
         #expect(root == nil)
         #expect(worktrees.isEmpty)
+        #expect(branches.isEmpty)
     }
 }
 

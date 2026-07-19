@@ -548,9 +548,6 @@ extension Ghostty {
             case GHOSTTY_ACTION_REMOVE_WORKTREE:
                 return removeCurrentWorktree(app, target: target)
 
-            case GHOSTTY_ACTION_NEW_WORKTREE:
-                return showNewWorktree(app, target: target)
-
             case GHOSTTY_ACTION_INSPECTOR:
                 controlInspector(app, target: target, mode: action.action.inspector)
 
@@ -1332,29 +1329,6 @@ extension Ghostty {
                 guard let controller = surfaceView.window?.windowController as? TerminalController else { return false }
 
                 controller.removeCurrentWorktree()
-                return true
-
-            default:
-                assertionFailure()
-                return false
-            }
-        }
-
-        private static func showNewWorktree(
-            _ app: ghostty_app_t,
-            target: ghostty_target_s
-        ) -> Bool {
-            switch target.tag {
-            case GHOSTTY_TARGET_APP:
-                Ghostty.logger.warning("new worktree does nothing with an app target")
-                return false
-
-            case GHOSTTY_TARGET_SURFACE:
-                guard let surface = target.target.surface else { return false }
-                guard let surfaceView = self.surfaceView(from: surface) else { return false }
-                guard let controller = surfaceView.window?.windowController as? TerminalController else { return false }
-
-                controller.showNewWorktree()
                 return true
 
             default:

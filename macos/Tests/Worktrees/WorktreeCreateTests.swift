@@ -4,7 +4,7 @@ import Testing
 
 #if os(macOS)
 
-/// Tests for the M4 "New worktree…" flow: the destination-path convention,
+/// Tests for the palette worktree creation/opening flow: the destination-path convention,
 /// `git worktree add` result mapping, and the view-model creation pipeline
 /// (create → refresh → open), driven by a stateful fake `GitCommandRunning`.
 @MainActor
@@ -24,6 +24,7 @@ struct WorktreeCreateTests {
     HEAD 2222222222222222222222222222222222222222
     branch refs/heads/feature
     """
+    private static let localBranches = "main\nfeature\n"
 
     // MARK: Pure helpers
 
@@ -90,6 +91,24 @@ struct WorktreeCreateTests {
         ])
     }
 
+    @Test func addExistingBranchOmitsCreateFlagAndBase() async {
+        let runner = FakeCreateRunner(commonDir: Self.commonDir, porcelain: Self.porcelain)
+        let model = GitWorktreeModel(runner: runner)
+
+        let result = await model.addWorktree(
+            forExistingBranch: "feature",
+            forCwd: URL(fileURLWithPath: "/repo/main"))
+
+        guard case .success(let url) = result else {
+            Issue.record("expected success, got \(result)")
+            return
+        }
+        #expect(url.path == "/repo/main-worktrees/feature")
+        #expect(runner.addArguments == [
+            "worktree", "add", "/repo/main-worktrees/feature", "feature",
+        ])
+    }
+
     @Test func createOutsideRepositoryFails() async {
         let runner = FakeCreateRunner(commonDir: nil, porcelain: nil)
         let model = GitWorktreeModel(runner: runner)
@@ -141,6 +160,35 @@ struct WorktreeCreateTests {
         #expect(opened?.branch == "myfix")
         #expect(runner.addArguments == [
             "worktree", "add", "/repo/main-worktrees/myfix", "-b", "myfix", "main",
+        ])
+    }
+
+    @Test func openExistingBranchRefreshesAndOpensWorktree() async {
+        let runner = FakeCreateRunner(
+            commonDir: Self.commonDir,
+            porcelain: Self.porcelain,
+            localBranches: Self.localBranches,
+            addedBlock: """
+            worktree /repo/main-worktrees/feature
+            HEAD 2222222222222222222222222222222222222222
+            branch refs/heads/feature
+            """)
+        let viewModel = WorktreeSidebarViewModel(model: GitWorktreeModel(runner: runner))
+
+        var opened: Worktree?
+        viewModel.onSelect = { opened = $0 }
+        await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/main"))
+        #expect(viewModel.branchesWithoutWorktree == ["feature"])
+
+        await viewModel.openExistingBranch("feature")
+
+        #expect(viewModel.createError == nil)
+        #expect(viewModel.isCreatingWorktree == false)
+        #expect(viewModel.worktrees.map(\.branch) == ["main", "feature"])
+        #expect(viewModel.branchesWithoutWorktree.isEmpty)
+        #expect(opened?.branch == "feature")
+        #expect(runner.addArguments == [
+            "worktree", "add", "/repo/main-worktrees/feature", "feature",
         ])
     }
 
@@ -247,6 +295,7 @@ struct WorktreeCreateTests {
 private final class FakeCreateRunner: GitCommandRunning {
     private let commonDir: String?
     private var porcelain: String?
+    private let localBranches: String
     private let addResult: GitCommandResult
     private let addedBlock: String?
     private(set) var addArguments: [String]?
@@ -254,11 +303,13 @@ private final class FakeCreateRunner: GitCommandRunning {
     init(
         commonDir: String?,
         porcelain: String?,
+        localBranches: String = "main\n",
         addResult: GitCommandResult = .success(""),
         addedBlock: String? = nil
     ) {
         self.commonDir = commonDir
         self.porcelain = porcelain
+        self.localBranches = localBranches
         self.addResult = addResult
         self.addedBlock = addedBlock
     }
@@ -278,6 +329,9 @@ private final class FakeCreateRunner: GitCommandRunning {
         if arguments.contains("list") {
             guard let porcelain else { return .failure(status: 128, stderr: "not a git repository") }
             return .success(porcelain)
+        }
+        if arguments.contains("for-each-ref") {
+            return .success(localBranches)
         }
         return .failure(status: 1, stderr: "unexpected command \(arguments)")
     }

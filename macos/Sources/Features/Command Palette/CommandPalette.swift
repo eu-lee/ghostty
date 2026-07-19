@@ -27,6 +27,8 @@ struct CommandOption: Identifiable, Hashable {
     let titleWeight: Font.Weight?
     /// Sort key for stable ordering when titles are equal.
     let sortKey: AnySortKey?
+    /// Whether the palette should dismiss immediately when this option is selected.
+    let dismissOnSelect: Bool
     /// The action to perform when this option is selected.
     let action: () -> Void
 
@@ -43,6 +45,7 @@ struct CommandOption: Identifiable, Hashable {
         isDimmed: Bool = false,
         titleWeight: Font.Weight? = nil,
         sortKey: AnySortKey? = nil,
+        dismissOnSelect: Bool = true,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -57,6 +60,7 @@ struct CommandOption: Identifiable, Hashable {
         self.isDimmed = isDimmed
         self.titleWeight = titleWeight
         self.sortKey = sortKey
+        self.dismissOnSelect = dismissOnSelect
         self.action = action
     }
 
@@ -75,6 +79,8 @@ struct CommandPaletteView: View {
     var placeholder: String = "Execute a command…"
     var selectsFirstOption: Bool = false
     var options: [CommandOption]
+    var trailingOption: ((String) -> CommandOption?)?
+    var errorMessage: String?
     @State private var rawQuery = ""
     @State private var selectedIndex: UInt?
     @State private var hoveredOptionID: UUID?
@@ -105,12 +111,19 @@ struct CommandPaletteView: View {
         }
     }
 
+    var visibleOptions: [CommandOption] {
+        if let option = trailingOption?(query) {
+            return filteredOptions + [option]
+        }
+        return filteredOptions
+    }
+
     var selectedOption: CommandOption? {
         guard let selectedIndex else { return nil }
-        return if selectedIndex < filteredOptions.count {
-            filteredOptions[Int(selectedIndex)]
+        return if selectedIndex < visibleOptions.count {
+            visibleOptions[Int(selectedIndex)]
         } else {
-            filteredOptions.last
+            visibleOptions.last
         }
     }
 
@@ -128,20 +141,19 @@ struct CommandPaletteView: View {
                     isPresented = false
 
                 case .submit:
-                    isPresented = false
-                    selectedOption?.action()
+                    perform(selectedOption)
 
                 case .move(.up):
-                    if filteredOptions.isEmpty { break }
-                    let current = selectedIndex ?? UInt(filteredOptions.count)
+                    if visibleOptions.isEmpty { break }
+                    let current = selectedIndex ?? UInt(visibleOptions.count)
                     selectedIndex = (current == 0)
-                        ? UInt(filteredOptions.count - 1)
+                        ? UInt(visibleOptions.count - 1)
                         : current - 1
 
                 case .move(.down):
-                    if filteredOptions.isEmpty { break }
+                    if visibleOptions.isEmpty { break }
                     let current = selectedIndex ?? UInt.max
-                    selectedIndex = (current >= UInt(filteredOptions.count - 1))
+                    selectedIndex = (current >= UInt(visibleOptions.count - 1))
                         ? 0
                         : current + 1
 
@@ -168,12 +180,23 @@ struct CommandPaletteView: View {
             Divider()
 
             CommandTable(
-                options: filteredOptions,
+                options: visibleOptions,
                 query: query,
                 selectedIndex: $selectedIndex,
                 hoveredOptionID: $hoveredOptionID) { option in
-                    isPresented = false
-                    option.action()
+                    perform(option)
+            }
+
+            if let errorMessage, !errorMessage.isEmpty {
+                Divider()
+
+                Text(errorMessage)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+                    .help(errorMessage)
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
             }
         }
         .frame(maxWidth: 500)
@@ -210,6 +233,14 @@ struct CommandPaletteView: View {
                 selectedIndex = 0
             }
         }
+    }
+
+    private func perform(_ option: CommandOption?) {
+        guard let option else { return }
+        if option.dismissOnSelect {
+            isPresented = false
+        }
+        option.action()
     }
 
     /// Returns a score (0.0 to 1.0) indicating how well a color matches a search query color name.

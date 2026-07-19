@@ -716,7 +716,6 @@ fn actionCommands(action: Action.Key) []const Command {
         .worktree_picker,
         .close_worktree_session,
         .remove_worktree,
-        .new_worktree,
         .toggle_quick_terminal,
         .toggle_visibility,
         .previous_tab,

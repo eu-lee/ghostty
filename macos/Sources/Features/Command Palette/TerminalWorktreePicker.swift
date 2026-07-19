@@ -20,9 +20,11 @@ struct TerminalWorktreePickerView: View {
                         CommandPaletteView(
                             isPresented: $isPresented,
                             backgroundColor: ghosttyConfig.backgroundColor,
-                            placeholder: "Go to worktree…",
+                            placeholder: "Worktree or branch…",
                             selectsFirstOption: true,
-                            options: worktreeOptions
+                            options: worktreeOptions + branchOptions,
+                            trailingOption: createBranchOption(query:),
+                            errorMessage: viewModel.createError
                         )
                         .zIndex(1)
 
@@ -33,7 +35,9 @@ struct TerminalWorktreePickerView: View {
             }
         }
         .onChange(of: isPresented) { newValue in
-            if !newValue {
+            if newValue {
+                viewModel.clearCreateError()
+            } else {
                 DispatchQueue.main.async {
                     surfaceView.window?.makeFirstResponder(surfaceView)
                 }
@@ -54,12 +58,70 @@ struct TerminalWorktreePickerView: View {
                 subtitle: worktree.path.path,
                 description: worktree.path.path,
                 leadingColor: isLive ? Color.accentColor : Color.secondary.opacity(0.35),
-                sectionTitle: isLive ? "Active Branches" : "Inactive Branches",
+                sectionTitle: "Worktrees",
                 isDimmed: !isLive,
                 titleWeight: worktree.isMain ? .semibold : .regular
             ) {
                 onSelect(worktree)
             }
         }
+    }
+
+    private var branchOptions: [CommandOption] {
+        viewModel.branchesWithoutWorktree.map { branch in
+            CommandOption(
+                title: branch,
+                subtitle: viewModel.isCreatingWorktree ? "Opening…" : "Open existing branch",
+                description: branch,
+                leadingIcon: "arrow.triangle.branch",
+                sectionTitle: "Branches",
+                isDimmed: true,
+                dismissOnSelect: false
+            ) {
+                Task { @MainActor in
+                    await viewModel.openExistingBranch(branch)
+                    if viewModel.createError == nil {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func createBranchOption(query: String) -> CommandOption? {
+        let branch = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else { return nil }
+        guard !existingNames.contains(branch) else { return nil }
+
+        return CommandOption(
+            title: "Create branch '\(branch)'…",
+            subtitle: viewModel.isCreatingWorktree ? "Creating…" : createSubtitle,
+            description: branch,
+            leadingIcon: "plus.circle",
+            sectionTitle: "Create",
+            emphasis: true,
+            dismissOnSelect: false
+        ) {
+            Task { @MainActor in
+                await viewModel.createWorktree(branch: branch)
+                if viewModel.createError == nil {
+                    isPresented = false
+                }
+            }
+        }
+    }
+
+    private var createSubtitle: String {
+        if let base = viewModel.defaultBaseBranch {
+            return "Create from \(base)"
+        }
+        return "Create from repository HEAD"
+    }
+
+    private var existingNames: Set<String> {
+        let worktreeNames = viewModel.worktrees.flatMap { worktree in
+            [WorktreeSidebar.displayName(for: worktree), worktree.branch].compactMap(\.self)
+        }
+        return Set(worktreeNames + viewModel.branchesWithoutWorktree)
     }
 }

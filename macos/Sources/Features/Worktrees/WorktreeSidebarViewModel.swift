@@ -20,6 +20,9 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// already returns them in that order — we preserve it).
     @Published private(set) var worktrees: [Worktree] = []
 
+    /// Local branches that do not currently have a linked worktree.
+    @Published private(set) var branchesWithoutWorktree: [String] = []
+
     /// Case-insensitive substring filter applied over branch + directory names.
     @Published var filterText: String = ""
 
@@ -33,8 +36,8 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// initial (pre-load) state from a genuinely empty / non-repo result.
     @Published private(set) var hasLoaded: Bool = false
 
-    /// True while a `git worktree add` is running (M4). Drives the inline
-    /// progress indicator and prevents concurrent creations.
+    /// True while a `git worktree add` is running. Prevents concurrent
+    /// create/open operations from the palette.
     @Published private(set) var isCreatingWorktree: Bool = false
 
     /// True while `git worktree remove` is running. Prevents duplicate
@@ -52,9 +55,9 @@ final class WorktreeSidebarViewModel: ObservableObject {
     /// git error, making a force retry appropriate.
     @Published private(set) var forceRemoveCandidate: Worktree?
 
-    /// The last worktree-creation failure, as a short user-facing message
-    /// rendered inline in the sidebar (never an alert). Nil when the last
-    /// creation succeeded or the user dismissed the message.
+    /// The last worktree create/open failure, as a short user-facing message
+    /// rendered inline in the palette (never an alert). Nil when the last
+    /// operation succeeded or the user dismissed the message.
     @Published private(set) var createError: String?
 
     /// Canonical paths for worktrees with at least one surface whose bell is
@@ -107,13 +110,19 @@ final class WorktreeSidebarViewModel: ObservableObject {
         currentCwd = cwd
 
         let loaded: [Worktree]
+        let localBranches: [String]
         if let cwd {
             loaded = await model.worktrees(forCwd: cwd)
+            localBranches = await model.localBranches(forCwd: cwd)
         } else {
             loaded = []
+            localBranches = []
         }
 
         worktrees = loaded
+        branchesWithoutWorktree = WorktreeSidebar.branchesWithoutWorktree(
+            localBranches: localBranches,
+            worktrees: loaded)
         hasLoaded = true
 
         // Preserve an existing selection if it still exists after the refresh;
@@ -158,7 +167,7 @@ final class WorktreeSidebarViewModel: ObservableObject {
 
     /// Create a worktree (and branch) named `branch` via `git worktree add`,
     /// then refresh the list and open the new worktree (M4). Failures land in
-    /// `createError` for the sidebar to render inline.
+    /// `createError` for the palette to render inline.
     func createWorktree(branch: String, base: String? = nil) async {
         let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isCreatingWorktree else { return }
@@ -197,8 +206,37 @@ final class WorktreeSidebarViewModel: ObservableObject {
         }
     }
 
-    /// Clear a pending creation error (the user dismissed the new-worktree
-    /// field or started typing a fresh attempt).
+    /// Add a worktree for an existing local branch, then refresh and open it.
+    /// Uses the same inline `createError` surface as branch creation because
+    /// both operations are `git worktree add` flows from the palette.
+    func openExistingBranch(_ branch: String) async {
+        let trimmed = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isCreatingWorktree else { return }
+        guard let cwd = currentCwd else {
+            createError = "No working directory"
+            return
+        }
+
+        isCreatingWorktree = true
+        createError = nil
+        defer { isCreatingWorktree = false }
+
+        switch await model.addWorktree(forExistingBranch: trimmed, forCwd: cwd) {
+        case .success(let path):
+            await refresh(cwd: cwd)
+
+            let created = WorktreeSidebar.canonicalPath(path)
+            if let worktree = worktrees.first(where: {
+                WorktreeSidebar.canonicalPath($0.path) == created
+            }) {
+                select(worktree)
+            }
+        case .failure(let error):
+            createError = error.message
+        }
+    }
+
+    /// Clear a pending creation error after the palette is reopened.
     func clearCreateError() {
         createError = nil
     }
@@ -332,6 +370,11 @@ enum WorktreeSidebar {
         let keyed = worktrees.map { (worktree: $0, isActive: activeWorktreePaths.contains(WorktreeWorkspaceManager.key($0.path))) }
         return keyed.filter { $0.isActive }.map { $0.worktree } +
             keyed.filter { !$0.isActive }.map { $0.worktree }
+    }
+
+    static func branchesWithoutWorktree(localBranches: [String], worktrees: [Worktree]) -> [String] {
+        let branchesWithWorktree = Set(worktrees.compactMap(\.branch))
+        return localBranches.filter { !branchesWithWorktree.contains($0) }
     }
 
     /// The worktree `offset` steps away from `current` in sidebar order,

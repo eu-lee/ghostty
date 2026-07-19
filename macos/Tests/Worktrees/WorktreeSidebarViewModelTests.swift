@@ -29,11 +29,13 @@ struct WorktreeSidebarViewModelTests {
     HEAD 3333333333333333333333333333333333333333
     detached
     """
+    private static let localBranches = "main\nfeature\nreview\n"
 
     private func repoModel() -> GitWorktreeModel {
         GitWorktreeModel(runner: FakeGitRunner(
             commonDir: Self.commonDir,
-            porcelain: Self.porcelain
+            porcelain: Self.porcelain,
+            localBranches: Self.localBranches
         ))
     }
 
@@ -56,6 +58,8 @@ struct WorktreeSidebarViewModelTests {
         #expect(detached?.isDetached == true)
         #expect(detached?.branch == "detached-head")
         #expect(WorktreeSidebar.displayName(for: detached!) == "detached-head")
+
+        #expect(viewModel.branchesWithoutWorktree == ["review"])
     }
 
     @Test func activeWorktreeSelectedFromCwd() async {
@@ -197,6 +201,17 @@ struct WorktreeSidebarViewModelTests {
         ])
     }
 
+    @Test func branchesWithoutWorktreeSubtractsLoadedWorktreeBranches() {
+        let worktrees = [
+            Worktree(path: URL(fileURLWithPath: "/repo/main"), branch: "main", isMain: true, isDetached: false),
+            Worktree(path: URL(fileURLWithPath: "/repo/feature"), branch: "feature", isMain: false, isDetached: false),
+        ]
+
+        #expect(WorktreeSidebar.branchesWithoutWorktree(
+            localBranches: ["main", "feature", "review"],
+            worktrees: worktrees) == ["review"])
+    }
+
     @Test func bellStatusUsesCanonicalKeys() async {
         let viewModel = WorktreeSidebarViewModel(model: repoModel())
         await viewModel.refresh(cwd: URL(fileURLWithPath: "/repo/main"))
@@ -223,6 +238,13 @@ struct WorktreeSidebarViewModelTests {
 private struct FakeGitRunner: GitCommandRunning {
     let commonDir: String?
     let porcelain: String?
+    let localBranches: String
+
+    init(commonDir: String?, porcelain: String?, localBranches: String = "") {
+        self.commonDir = commonDir
+        self.porcelain = porcelain
+        self.localBranches = localBranches
+    }
 
     func runGit(arguments: [String], cwd: URL, timeout: TimeInterval) async -> GitCommandResult {
         if arguments.contains("rev-parse") {
@@ -232,6 +254,9 @@ private struct FakeGitRunner: GitCommandRunning {
         if arguments.contains("list") {
             guard let porcelain else { return .failure(status: 128, stderr: "not a git repository") }
             return .success(porcelain)
+        }
+        if arguments.contains("for-each-ref") {
+            return .success(localBranches)
         }
         return .failure(status: 1, stderr: "unexpected command \(arguments)")
     }

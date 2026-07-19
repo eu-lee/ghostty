@@ -2,56 +2,34 @@
 <h1>
 <p align="center">
   <img src="https://github.com/user-attachments/assets/fe853809-ba8b-400b-83ab-a9a0da25be8a" alt="Logo" width="128">
-  <br>Ghostty
+  <br>Ghostty &mdash; worktree fork
 </h1>
   <p align="center">
-    Fast, native, feature-rich terminal emulator pushing modern features.
+    A personal fork of <a href="https://github.com/ghostty-org/ghostty">ghostty-org/ghostty</a>.
     <br />
-    A native GUI or embeddable library via <code>libghostty</code>.
-    <br />
-    <a href="#about">About</a>
-    ·
-    <a href="https://ghostty.org/download">Download</a>
-    ·
-    <a href="https://ghostty.org/docs">Documentation</a>
-    ·
-    <a href="CONTRIBUTING.md">Contributing</a>
-    ·
-    <a href="HACKING.md">Developing</a>
+    This README covers what the fork adds and how to build it. For upstream
+    Ghostty &mdash; downloads, documentation, and the full feature set &mdash;
+    see the <a href="https://ghostty.org">original project</a>.
   </p>
 </p>
 
-## About
+## What this fork adds
 
-Ghostty is a terminal emulator that differentiates itself by being
-fast, feature-rich, and native. While there are many excellent terminal
-emulators available, they all force you to choose between speed,
-features, or native UIs. Ghostty provides all three.
+A macOS-native **git worktree sidebar**. Each window can list the worktrees of
+the repository its terminal is in and switch the whole window between
+per-worktree workspaces. Worktrees are resolved from the window's working
+directory.
 
-**`libghostty`** is a cross-platform, zero-dependency C and Zig library
-for building terminal emulators or utilizing terminal functionality
-(such as style parsing). Anyone can use `libghostty` to build a terminal
-emulator or embed a terminal into their own applications. See
-[Ghostling](https://github.com/ghostty-org/ghostling) for a minimal complete project
-example or the [`examples` directory](https://github.com/ghostty-org/ghostty/tree/main/example)
-for smaller examples of using `libghostty` in C and Zig.
+A *workspace* is the window's entire split layout — switching swaps every pane
+at once, and the workspace you leave keeps running in the background: processes,
+scrollback, and layout all survive, and switching back restores them exactly.
 
-For more details, see [About Ghostty](https://ghostty.org/docs/about).
-
-## Worktree Sidebar (fork feature)
-
-This fork adds a macOS-native **git worktree sidebar**: each window can list
-the worktrees of the repository its terminal is in and switch the entire
-window between per-worktree workspaces. The worktrees are resolved from the
-window's working directory. A workspace is the window's whole split layout —
-switching swaps every pane at once, and the previous workspace's terminals
-keep running in the background (processes, scrollback, and layout all survive;
-switching back restores them exactly).
-
-Inside the sidebar, worktrees that have a live session ("active") are grouped
-above the inactive ones. The worktree the window is currently switched to is
-marked with a leading `*`, and any worktree whose session has rung its bell
-shows a bell indicator on its row.
+The sidebar header shows `root: <path>` — the directory the worktrees link to
+(the main worktree), which stays fixed no matter which worktree you're on. The
+**main worktree is pinned to the top**; the worktree the window is currently
+switched to is marked with a leading `*`. Worktrees with a live session
+("active") are grouped above the inactive ones, and any worktree whose session
+has rung its bell shows a bell indicator on its row.
 
 ### Keybinds
 
@@ -59,10 +37,10 @@ All bindings below are macOS-only; the actions are no-ops elsewhere. Defaults
 are compiled into this fork's build (see `src/config/Config.zig`); the cycle
 actions ship unbound so you can bind them yourself.
 
-| Action | Default macOS bind | What it does |
+| Action | Default bind | What it does |
 | --- | --- | --- |
 | `toggle_worktree_sidebar` | `cmd+shift+e` | Show or hide the worktree sidebar. |
-| `worktree_picker` | `cmd+opt+n` | Open the unified worktree palette. |
+| `worktree_picker` | `cmd+opt+n` | Open the worktree palette (press again, or `esc`, to close it). |
 | `goto_worktree:next` | _(unbound)_ | Switch to the next active worktree. |
 | `goto_worktree:previous` | _(unbound)_ | Switch to the previous active worktree. |
 | `close_worktree_session` | `cmd+opt+c` | Tear down the selected worktree's live session, leaving the worktree on disk. |
@@ -78,216 +56,76 @@ keybind = cmd+alt+left_bracket=goto_worktree:previous
 ### Using it
 
 - **Open the sidebar** with `cmd+shift+e` or View → Worktree Sidebar.
-- **Switch, open, or create** with `worktree_picker` (`cmd+opt+n`, also
-  reachable via View → Go to Worktree…). The palette searches live worktrees
-  under **Worktrees**; choosing one switches to it. It also lists local
-  branches with no worktree under **Branches**; choosing one runs
-  `git worktree add ../<repo>-worktrees/<branch> <branch>` and opens it. If
-  your query matches neither, the palette offers **Create branch '<query>'**,
-  which runs
-  `git worktree add ../<repo>-worktrees/<branch> -b <branch> <base>` using the
-  selected worktree's branch as the default base, or repository HEAD if no
-  worktree is selected. Worktrees use a visible container directory next to the
-  repository, one subdirectory per branch (slashes in branch names become
-  dashes). Git errors show inline in the palette, never as alerts.
+- **Switch, open, or create** with the palette (`cmd+opt+n`, also reachable via
+  View → Go to Worktree…). It's one search bar, sectioned:
+  - **Worktrees** — live worktrees; choosing one switches to it.
+  - **Branches** — local branches with no worktree; choosing one runs
+    `git worktree add ../<repo>-worktrees/<branch> <branch>` and opens it.
+  - **Create branch '<query>'** — shown when your query matches nothing; runs
+    `git worktree add ../<repo>-worktrees/<branch> -b <branch> <base>` using the
+    selected worktree's branch as the default base (or repository HEAD if none
+    is selected).
+
+  Worktrees live in a visible container directory next to the repository, one
+  subdirectory per branch (slashes become dashes). Git errors show inline in
+  the palette, never as alerts.
 - **Close a session** with `close_worktree_session` (`cmd+opt+c`) or a row's
-  right-click **Close Session** menu item. This drops the worktree's live
-  workspace and returns the row to inactive; the worktree remains on disk, and
-  opening it again starts a fresh session.
+  right-click **Close Session**. This drops the worktree's live workspace and
+  returns the row to inactive; the worktree stays on disk, and opening it again
+  starts a fresh session.
 - **Remove a worktree** with `remove_worktree` (`cmd+opt+backspace`) or a row's
-  right-click **Remove Worktree…** menu item, which runs `git worktree remove`
-  for that checkout. The branch is left intact. If git refuses because the
-  worktree is dirty, the sidebar shows the error inline and offers
-  **Force remove**. The keybind actions act on the sidebar's currently selected
-  worktree.
+  right-click **Remove Worktree…**, which runs `git worktree remove` for that
+  checkout. The branch is left intact. If git refuses because the worktree is
+  dirty, the sidebar shows the error inline and offers **Force remove**.
 
-The sidebar's collapsed state and width are remembered for the app session
-(new windows inherit them); persisting across restarts is a non-goal for v1, as
-are dirty/ahead-behind indicators. Creation and removal never delete branches.
+The keybind actions act on the sidebar's currently selected worktree, whether or
+not the sidebar is showing. Removal is refused for the main worktree, and
+closing a worktree with no live session is a no-op. The sidebar's collapsed
+state and width are remembered for the app session (new windows inherit them);
+persisting across restarts, and dirty / ahead-behind indicators, are non-goals
+for v1. Creation and removal never delete branches.
 
-## Download
+## Building & running
 
-See the [download page](https://ghostty.org/download) on the Ghostty website.
+Requires **Zig 0.15** and a full **Xcode** install (the Command Line Tools
+alone aren't enough for the macOS app).
 
-## Documentation
+### Debug build (for hacking)
 
-See the [documentation](https://ghostty.org/docs) on the Ghostty website.
-
-## Contributing and Developing
-
-If you have any ideas, issues, etc. regarding Ghostty, or would like to
-contribute to Ghostty through pull requests, please check out our
-["Contributing to Ghostty"](CONTRIBUTING.md) document. Those who would like
-to get involved with Ghostty's development as well should also read the
-["Developing Ghostty"](HACKING.md) document for more technical details.
-
-## Roadmap and Status
-
-Ghostty is stable and in use by millions of people and machines daily.
-
-The high-level ambitious plan for the project, in order:
-
-|  #  | Step                                                    | Status |
-| :-: | ------------------------------------------------------- | :----: |
-|  1  | Standards-compliant terminal emulation                  |   ✅   |
-|  2  | Competitive performance                                 |   ✅   |
-|  3  | Rich windowing features -- multi-window, tabbing, panes |   ✅   |
-|  4  | Native Platform Experiences                             |   ✅   |
-|  5  | Cross-platform `libghostty` for Embeddable Terminals    |   ✅   |
-|  6  | Ghostty-only Terminal Control Sequences                 |   ❌   |
-
-Additional details for each step in the big roadmap below:
-
-#### Standards-Compliant Terminal Emulation
-
-Ghostty implements all of the regularly used control sequences and
-can run every mainstream terminal program without issue. For legacy sequences,
-we've done a [comprehensive xterm audit](https://github.com/ghostty-org/ghostty/issues/632)
-comparing Ghostty's behavior to xterm and building a set of conformance
-test cases.
-
-In addition to legacy sequences (what you'd call real "terminal" emulation),
-Ghostty also supports more modern sequences than almost any other terminal
-emulator. These features include things like the Kitty graphics protocol,
-Kitty image protocol, clipboard sequences, synchronized rendering,
-light/dark mode notifications, and many, many more.
-
-We believe Ghostty is one of the most compliant and feature-rich terminal
-emulators available.
-
-Terminal behavior is partially a de jure standard
-(i.e. [ECMA-48](https://ecma-international.org/publications-and-standards/standards/ecma-48/))
-but mostly a de facto standard as defined by popular terminal emulators
-worldwide. Ghostty takes the approach that our behavior is defined by
-(1) standards, if available, (2) xterm, if the feature exists, (3)
-other popular terminals, in that order. This defines what the Ghostty project
-views as a "standard."
-
-#### Competitive Performance
-
-Ghostty is generally in the same performance category as the other highest
-performing terminal emulators.
-
-"The same performance category" means that Ghostty is much faster than
-traditional or "slow" terminals and is within an unnoticeable margin of the
-well-known "fast" terminals. For example, Ghostty and Alacritty are usually within
-a few percentage points of each other on various benchmarks, but are both
-something like 100x faster than Terminal.app and iTerm. However, Ghostty
-is much more feature rich than Alacritty and has a much more native app
-experience.
-
-This performance is achieved through high-level architectural decisions and
-low-level optimizations. At a high-level, Ghostty has a multi-threaded
-architecture with a dedicated read thread, write thread, and render thread
-per terminal. Our renderer uses OpenGL on Linux and Metal on macOS.
-Our read thread has a heavily optimized terminal parser that leverages
-CPU-specific SIMD instructions. Etc.
-
-#### Rich Windowing Features
-
-The Mac and Linux (build with GTK) apps support multi-window, tabbing, and
-splits with additional features such as tab renaming, coloring, etc. These
-features allow for a higher degree of organization and customization than
-single-window terminals.
-
-#### Native Platform Experiences
-
-Ghostty is a cross-platform terminal emulator but we don't aim for a
-least-common-denominator experience. There is a large, shared core written
-in Zig but we do a lot of platform-native things:
-
-- The macOS app is a true SwiftUI-based application with all the things you
-  would expect such as real windowing, menu bars, a settings GUI, etc.
-- macOS uses a true Metal renderer with CoreText for font discovery.
-- macOS supports AppleScript, Apple Shortcuts (AppIntents), etc.
-- The Linux app is built with GTK.
-- The Linux app integrates deeply with systemd if available for things
-  like always-on, new windows in a single instance, cgroup isolation, etc.
-
-Our goal with Ghostty is for users of whatever platform they run Ghostty
-on to think that Ghostty was built for their platform first and maybe even
-exclusively. We want Ghostty to feel like a native app on every platform,
-for the best definition of "native" on each platform.
-
-#### Cross-platform `libghostty` for Embeddable Terminals
-
-In addition to being a standalone terminal emulator, Ghostty is a
-C-compatible library for embedding a fast, feature-rich terminal emulator
-in any 3rd party project. This library is called `libghostty`.
-
-Due to the scope of this project, we're breaking libghostty down into
-separate libraries, starting with `libghostty-vt`. The goal of
-this project is to focus on parsing terminal sequences and maintaining
-terminal state. This is covered in more detail in this
-[blog post](https://mitchellh.com/writing/libghostty-is-coming).
-
-`libghostty-vt` is already available and usable today for Zig and C and
-is compatible for macOS, Linux, Windows, and WebAssembly. The functionality
-is extremely stable (since its been proven in Ghostty GUI for a long time),
-but the API signatures are still in flux.
-
-`libghostty` is already heavily in use. See [`examples`](https://github.com/ghostty-org/ghostty/tree/main/example)
-for small examples of using `libghostty` in C and Zig or the
-[Ghostling](https://github.com/ghostty-org/ghostling) project for a
-complete example. See [awesome-libghostty](https://github.com/Uzaaft/awesome-libghostty)
-for a list of projects and resources related to `libghostty`.
-
-We haven't tagged libghostty with a version yet and we're still working
-on a better docs experience, but our [Doxygen website](https://libghostty.tip.ghostty.org/)
-is a good resource for the C API.
-
-#### Ghostty-only Terminal Control Sequences
-
-We want and believe that terminal applications can and should be able
-to do so much more. We've worked hard to support a wide variety of modern
-sequences created by other terminal emulators towards this end, but we also
-want to fill the gaps by creating our own sequences.
-
-We've been hesitant to do this up until now because we don't want to create
-more fragmentation in the terminal ecosystem by creating sequences that only
-work in Ghostty. But, we do want to balance that with the desire to push the
-terminal forward with stagnant standards and the slow pace of change in the
-terminal ecosystem.
-
-We haven't done any of this yet.
-
-## Crash Reports
-
-Ghostty has a built-in crash reporter that will generate and save crash
-reports to disk. The crash reports are saved to the `$XDG_STATE_HOME/ghostty/crash`
-directory. If `$XDG_STATE_HOME` is not set, the default is `~/.local/state`.
-**Crash reports are _not_ automatically sent anywhere off your machine.**
-
-Crash reports are only generated the next time Ghostty is started after a
-crash. If Ghostty crashes and you want to generate a crash report, you must
-restart Ghostty at least once. You should see a message in the log that a
-crash report was generated.
-
-> [!NOTE]
->
-> Use the `ghostty +crash-report` CLI command to get a list of available crash
-> reports. A future version of Ghostty will make the contents of the crash
-> reports more easily viewable through the CLI and GUI.
-
-Crash reports end in the `.ghosttycrash` extension. The crash reports are in
-[Sentry envelope format](https://develop.sentry.dev/sdk/envelopes/). You can
-upload these to your own Sentry account to view their contents, but the format
-is also publicly documented so any other available tools can also be used.
-The `ghostty +crash-report` CLI command can be used to list any crash reports.
-A future version of Ghostty will show you the contents of the crash report
-directly in the terminal.
-
-To send the crash report to the Ghostty project, you can use the following
-CLI command using the [Sentry CLI](https://docs.sentry.io/cli/installation/):
-
-```shell-session
-SENTRY_DSN=https://e914ee84fd895c4fe324afa3e53dac76@o4507352570920960.ingest.us.sentry.io/4507850923638784 sentry-cli send-envelope --raw <path to ghostty crash>
+```sh
+zig build
 ```
 
-> [!WARNING]
->
-> The crash report can contain sensitive information. The report doesn't
-> purposely contain sensitive information, but it does contain the full
-> stack memory of each thread at the time of the crash. This information
-> is used to rebuild the stack trace but can also contain sensitive data
-> depending on when the crash occurred.
+Produces `macos/build/Debug/Ghostty.app`. Add `-Demit-macos-app=false` to skip
+the app bundle when you only need the core to compile. The debug app uses a
+separate bundle id (`com.mitchellh.ghostty.debug`), so it runs happily
+alongside a stable install.
+
+### A real build to install
+
+Use the **ReleaseLocal** configuration — optimized and ad-hoc code-signed, with
+no notarization or auto-update (the right trade-off for a personal fork):
+
+```sh
+cd macos && ./build.nu --configuration ReleaseLocal
+```
+
+Produces `macos/build/ReleaseLocal/Ghostty.app`; drag it into `/Applications`.
+Because it isn't notarized, Gatekeeper will complain on first launch — either
+right-click → **Open** once, or clear the quarantine flag:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Ghostty.app
+```
+
+There's no auto-update, so re-run the build after you pull. The full,
+notarized `Release` pipeline (Developer ID signing + Sparkle appcast) is
+upstream's distribution path and needs an Apple Developer account — out of
+scope for this fork.
+
+## Upstream
+
+Everything not described above is upstream Ghostty. It's a fast, native,
+feature-rich terminal emulator; for the full story, downloads, and
+documentation see [ghostty.org](https://ghostty.org) and
+[ghostty-org/ghostty](https://github.com/ghostty-org/ghostty).

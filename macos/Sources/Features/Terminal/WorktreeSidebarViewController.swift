@@ -481,7 +481,22 @@ extension TerminalController {
         Task { @MainActor in
             await viewModel.refresh(cwd: cwd)
             self.syncWorktreeStatus()
+            self.syncWorktreeGitWatcher()
         }
+    }
+
+    /// Point the git-directory watcher at the current repository, or tear it
+    /// down. Only armed while the sidebar is visible: a collapsed sidebar has
+    /// nothing to keep current, and refreshing it would spawn `git` for output
+    /// nobody can see.
+    func syncWorktreeGitWatcher() {
+        guard let controller = worktreeSidebarViewController,
+              !controller.isSidebarCollapsed else {
+            worktreeGitWatcher.stop()
+            return
+        }
+
+        worktreeGitWatcher.watch(controller.viewModel.gitCommonDir)
     }
 
     /// Semantic entry point for toggling the sidebar. This no-arg signature is kept
@@ -497,8 +512,11 @@ extension TerminalController {
 
         // Refresh when the sidebar is being opened so it reflects the current
         // repository state without waiting for a window-focus change.
+        // Collapsing instead tears the watcher down.
         if willOpen {
             refreshWorktreeSidebar()
+        } else {
+            syncWorktreeGitWatcher()
         }
     }
 

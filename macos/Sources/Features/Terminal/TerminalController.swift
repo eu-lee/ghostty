@@ -76,6 +76,13 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     // indicators such as bell.
     var worktreeStatusCancellable: AnyCancellable?
 
+    // worktree-sidebar: Watches the repository's git directory so the sidebar
+    // reflects `git switch`, branch add/delete, and CLI `git worktree` calls
+    // made from the terminal. Armed only while the sidebar is visible.
+    lazy var worktreeGitWatcher = GitDirectoryWatcher { [weak self] in
+        self?.refreshWorktreeSidebar()
+    }
+
     init(_ ghostty: Ghostty.App,
          withBaseConfig base: Ghostty.SurfaceConfiguration? = nil,
          withSurfaceTree tree: SplitTree<Ghostty.SurfaceView>? = nil,

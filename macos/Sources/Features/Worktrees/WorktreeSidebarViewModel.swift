@@ -114,19 +114,42 @@ final class WorktreeSidebarViewModel: ObservableObject {
     func refresh(cwd: URL?) async {
         currentCwd = cwd
 
-        let loaded: [Worktree]
-        let localBranches: [String]
-        let remoteBranches: [RemoteBranch]
-        if let cwd {
-            loaded = await model.worktrees(forCwd: cwd)
-            localBranches = await model.localBranches(forCwd: cwd)
-            remoteBranches = await model.remoteBranches(forCwd: cwd)
-        } else {
-            loaded = []
-            localBranches = []
-            remoteBranches = []
+        // A nil cwd is a deterministic empty state (no surface pwd, no
+        // configured working-directory). Otherwise classify the repo state so a
+        // transient git failure can't blank a live repo.
+        guard let cwd else {
+            applyLoadedState(worktrees: [], localBranches: [], remoteBranches: [], cwd: nil)
+            return
         }
 
+        switch await model.load(forCwd: cwd) {
+        case .repository(let loaded, let localBranches, let remoteBranches):
+            applyLoadedState(
+                worktrees: loaded,
+                localBranches: localBranches,
+                remoteBranches: remoteBranches,
+                cwd: cwd)
+        case .notARepository:
+            applyLoadedState(worktrees: [], localBranches: [], remoteBranches: [], cwd: cwd)
+        case .unavailable:
+            // A timeout, launch failure, or lock race — not an authoritative
+            // "not a repo". Keep the last-good state; a background refresh must
+            // never collapse a repository the user is sitting in. If this is
+            // the very first load, `hasLoaded` stays false, so the view shows
+            // the pre-load blank rather than a false "Not a git repository".
+            return
+        }
+    }
+
+    /// Replace the published state from a completed, authoritative load. Only
+    /// reached for a real repository, an authoritative non-repo, or a nil cwd —
+    /// never for a transient `.unavailable`, which leaves state untouched.
+    private func applyLoadedState(
+        worktrees loaded: [Worktree],
+        localBranches: [String],
+        remoteBranches: [RemoteBranch],
+        cwd: URL?
+    ) {
         worktrees = loaded
         branchesWithoutWorktree = WorktreeSidebar.branchesWithoutWorktree(
             localBranches: localBranches,

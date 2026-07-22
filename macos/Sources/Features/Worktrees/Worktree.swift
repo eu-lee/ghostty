@@ -102,9 +102,31 @@ enum WorktreeCreateError: Error, Equatable {
     }
 }
 
+/// The outcome of loading the sidebar's data for a directory, classified so a
+/// transient git failure can be told apart from an authoritative "this is not a
+/// repository". The distinction is load-bearing: a timeout or lock race must
+/// never blank a repo the user is sitting in (see `GitWorktreeModel.load`).
+enum WorktreeLoad: Equatable {
+    /// `rev-parse` confirmed a repository and its worktrees were enumerated.
+    case repository(worktrees: [Worktree], localBranches: [String], remoteBranches: [RemoteBranch])
+
+    /// `git` authoritatively reported the directory is not in a repository
+    /// (exit 128, "not a git repository"). Safe to show the empty state.
+    case notARepository
+
+    /// The state could not be determined — a timeout, a launch failure, an
+    /// index/ref lock race, or any other nonzero status. The caller must keep
+    /// its last-good state rather than blanking the sidebar.
+    case unavailable
+}
+
 struct GitWorktreeModel {
     var runner: GitCommandRunning = GitProcessRunner()
-    var timeout: TimeInterval = 2
+    /// Read queries run on every git-directory change and window focus, so they
+    /// race routine terminal git activity (shell prompts, helper tools, a
+    /// concurrent `git` holding `index.lock`). Keep this generous enough that a
+    /// busy machine doesn't spuriously time out and trip `.unavailable`.
+    var timeout: TimeInterval = 5
 
     /// `git worktree add` checks out a full working copy, which on a large
     /// repository takes far longer than the read-only queries above.
@@ -223,6 +245,81 @@ struct GitWorktreeModel {
             logFailure(result, command: "worktree remove", cwd: root)
             return .failure(.launchFailed(message))
         }
+    }
+
+    /// Load everything the sidebar needs in a single classification pass, so a
+    /// transient git failure is distinguished from an authoritative "not a git
+    /// repository". One `rev-parse` decides the repo state; enumerating the
+    /// worktrees confirms it. Any failure that isn't an authoritative non-repo
+    /// yields `.unavailable`, and the caller keeps its last-good state rather
+    /// than collapsing a live repo to the empty state.
+    func load(forCwd cwd: URL) async -> WorktreeLoad {
+        let rootResult = await runner.runGit(
+            arguments: ["rev-parse", "--git-common-dir"],
+            cwd: cwd,
+            timeout: timeout
+        )
+
+        let root: URL
+        switch rootResult {
+        case .success(let output):
+            guard let firstLine = output.lines.first, !firstLine.isEmpty else {
+                logger.warning("git rev-parse --git-common-dir returned no path for \(cwd.path, privacy: .public)")
+                return .unavailable
+            }
+            root = worktreeRoot(fromCommonGitDir: absoluteURL(forGitPath: firstLine, relativeTo: cwd))
+        case .failure(let status, let stderr):
+            // Only git's own authoritative verdict (exit 128, "not a git
+            // repository") empties the sidebar. Every other nonzero status is
+            // treated as transient so a blip never blanks a live repo.
+            if status == 128, stderr.lowercased().contains("not a git repository") {
+                return .notARepository
+            }
+            logFailure(rootResult, command: "rev-parse --git-common-dir", cwd: cwd)
+            return .unavailable
+        case .timedOut, .launchFailed:
+            logFailure(rootResult, command: "rev-parse --git-common-dir", cwd: cwd)
+            return .unavailable
+        }
+
+        // It is a repository. Enumerating its worktrees is the one call whose
+        // failure we can't paper over, so a failure here is transient →
+        // `.unavailable` (never an empty repository).
+        let listResult = await runner.runGit(
+            arguments: ["worktree", "list", "--porcelain"],
+            cwd: root,
+            timeout: timeout
+        )
+        guard case .success(let porcelain) = listResult else {
+            logFailure(listResult, command: "worktree list --porcelain", cwd: root)
+            return .unavailable
+        }
+        let worktrees = WorktreePorcelainParser.parse(porcelain)
+
+        // Branch lists only feed the palette's "no worktree" sections. If they
+        // blip, prefer showing the worktrees without supplementary branch rows
+        // over failing the whole load, so a repo the user is in stays put.
+        let local = await forEachRef(["refs/heads"], root: root)
+        let remote = await forEachRef(["--sort=-committerdate", "refs/remotes"], root: root)
+            .compactMap { RemoteBranch(shortRef: $0) }
+
+        return .repository(worktrees: worktrees, localBranches: local, remoteBranches: remote)
+    }
+
+    /// Run `for-each-ref --format=%(refname:short)` with the given extra args,
+    /// returning the short refs or an empty list on failure (branch lists are
+    /// supplementary — see `load`).
+    private func forEachRef(_ extraArgs: [String], root: URL) async -> [String] {
+        let result = await runner.runGit(
+            arguments: ["for-each-ref", "--format=%(refname:short)"] + extraArgs,
+            cwd: root,
+            timeout: timeout
+        )
+        guard case .success(let output) = result else {
+            logFailure(result, command: "for-each-ref \(extraArgs.joined(separator: " "))", cwd: root)
+            return []
+        }
+        return output.lines
     }
 
     func repoRoot(forCwd cwd: URL) async -> URL? {

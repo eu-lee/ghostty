@@ -136,6 +136,35 @@ struct WorktreeCycleTests {
             from: URL(fileURLWithPath: "/repo/main"),
             offset: 1) == nil)
     }
+
+    /// Doc 17: a window opened into a non-main worktree pre-warms main as a
+    /// second active workspace, so the active set is exactly {attached, main}.
+    /// Cycling must then swap between the two — the crux of "I want to swap to
+    /// main as well." With two active entries, next and previous both land on
+    /// the other one.
+    @Test func mainPreWarmedIsCyclableFromAttachedWorktree() {
+        // feature is attached, main is the pre-warmed detached workspace.
+        let active = Set([
+            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/feature")),
+            WorktreeWorkspaceManager.key(URL(fileURLWithPath: "/repo/main")),
+        ])
+
+        let toMain = WorktreeSidebar.cycleTarget(
+            in: Self.worktrees,
+            activeWorktreePaths: active,
+            from: URL(fileURLWithPath: "/repo/feature"),
+            offset: 1)
+        #expect(toMain?.branch == "main")
+
+        // And back: cycling from main returns to the attached worktree, never
+        // to the third worktree (review), which is still inactive.
+        let backToFeature = WorktreeSidebar.cycleTarget(
+            in: Self.worktrees,
+            activeWorktreePaths: active,
+            from: URL(fileURLWithPath: "/repo/main"),
+            offset: 1)
+        #expect(backToFeature?.branch == "feature")
+    }
 }
 
 #endif

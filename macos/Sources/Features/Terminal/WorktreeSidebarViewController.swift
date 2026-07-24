@@ -484,6 +484,9 @@ extension TerminalController {
             await viewModel.refresh(cwd: cwd)
             self.syncWorktreeStatus()
             self.syncWorktreeGitWatcher()
+            // Keep main a warm, swappable session whenever the window sits in a
+            // repo, even if it opened into some other worktree. Idempotent.
+            self.ensureMainWorktreeActive()
         }
     }
 

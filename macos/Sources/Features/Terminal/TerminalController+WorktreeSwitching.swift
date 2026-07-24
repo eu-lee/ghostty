@@ -27,17 +27,26 @@ extension TerminalController {
 
     func syncWorktreeStatus(activePaths paths: Set<URL>? = nil) {
         guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+
+        // The attached worktree's key. The manager only ever stores *detached*
+        // workspaces (never the attached tree — see its class doc), so the
+        // controller must always contribute the attached one itself.
+        let attachedKey = worktreeWorkspaces?.activePath
+            ?? viewModel.selectedWorktree.map { WorktreeWorkspaceManager.key($0.path) }
+
         var active = paths ?? worktreeWorkspaces?.activeWorktreePaths ?? []
-        if active.isEmpty, let selected = viewModel.selectedWorktree {
-            active.insert(WorktreeWorkspaceManager.key(selected.path))
+        // Insert it unconditionally, not just when the set is otherwise empty:
+        // once main is pre-warmed as a detached workspace the manager already
+        // reports a non-empty set, so a "seed only when empty" shortcut would
+        // silently drop the attached worktree from the active list.
+        if let attachedKey {
+            active.insert(WorktreeWorkspaceManager.key(attachedKey))
         }
         viewModel.setActiveWorktreePaths(active)
 
         var bellWorktrees: Set<URL> = []
-        let attachedPath = worktreeWorkspaces?.activePath
-            ?? viewModel.selectedWorktree.map { WorktreeWorkspaceManager.key($0.path) }
-        if let attachedPath, surfaceTree.contains(where: { $0.bell }) {
-            bellWorktrees.insert(WorktreeWorkspaceManager.key(attachedPath))
+        if let attachedKey, surfaceTree.contains(where: { $0.bell }) {
+            bellWorktrees.insert(WorktreeWorkspaceManager.key(attachedKey))
         }
         if let worktreeWorkspaces {
             bellWorktrees.formUnion(worktreeWorkspaces.detached.compactMap { key, workspace in
@@ -45,6 +54,43 @@ extension TerminalController {
             })
         }
         viewModel.setBellWorktreePaths(bellWorktrees)
+    }
+
+    /// Ensure the main worktree has a live (detached) workspace so it is always
+    /// an active, swappable session — regardless of which worktree the window
+    /// opened into — landing on a warm shell when the user cycles or clicks to
+    /// it. Idempotent, and a no-op when the window already sits on main.
+    ///
+    /// This creates a terminal *workspace* rooted at the existing main working
+    /// tree (`main.path`, the repo root `git worktree list` reports first). It
+    /// is emphatically **not** a new git worktree: no `git worktree add`, no
+    /// `-worktrees/main` directory. Workspaces are live sessions this window
+    /// holds; worktrees are checkouts on disk.
+    func ensureMainWorktreeActive() {
+        guard let viewModel = worktreeSidebarViewController?.viewModel else { return }
+        guard let ghosttyApp = ghostty.app else { return }
+        guard let main = viewModel.worktrees.first(where: { $0.isMain }) else { return }
+
+        let manager = ensureWorktreeWorkspaces()
+        let mainKey = WorktreeWorkspaceManager.key(main.path)
+
+        // Nothing to do when main is the attached worktree, or already has a
+        // detached workspace (keeps repeated refreshes from leaking shells).
+        let attachedKey = manager.activePath
+            ?? viewModel.selectedWorktree.map { WorktreeWorkspaceManager.key($0.path) }
+        if attachedKey == mainKey { return }
+        if manager.workspace(for: mainKey) != nil { return }
+
+        // Create a warm, detached session rooted at the main worktree.
+        var config = Ghostty.SurfaceConfiguration()
+        config.workingDirectory = main.path.path
+        let surfaceView = Ghostty.SurfaceView(ghosttyApp, baseConfig: config)
+        manager.detach(.init(
+            worktreePath: main.path,
+            tree: SplitTree(view: surfaceView),
+            lastFocusedSurface: surfaceView))
+
+        syncWorktreeStatus()
     }
 
     func setupWorktreeStatusPublisher() {

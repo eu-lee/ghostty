@@ -1284,6 +1284,23 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         terminalViewContainer?.updateGlassTintOverlay(isKeyWindow: false)
     }
 
+    override func pwdDidChange(to url: URL?) {
+        super.pwdDidChange(to: url)
+
+        // worktree-sidebar: a new window's surface reports its pwd
+        // asynchronously (via OSC 7 / shell integration), landing after the
+        // window opens and after windowDidBecomeKey has already refreshed
+        // against a still-nil pwd. Re-source the sidebar when the pwd arrives
+        // so a fresh window (Cmd+N) reflects its repo without a manual toggle.
+        // refreshWorktreeSidebar() re-reads surfaceTree.first's pwd itself, so
+        // this stays correct even though `url` is the focused surface's pwd.
+        // Gate on an open sidebar: the toggle-open path handles the first
+        // reveal, and a collapsed sidebar has nothing to spend git on.
+        if let controller = worktreeSidebarViewController, !controller.isSidebarCollapsed {
+            refreshWorktreeSidebar()
+        }
+    }
+
     override func windowDidMove(_ notification: Notification) {
         super.windowDidMove(notification)
         self.fixTabBar()
